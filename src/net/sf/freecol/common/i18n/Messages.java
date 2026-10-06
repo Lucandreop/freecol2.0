@@ -115,6 +115,13 @@ public class Messages {
     private static final Map<String, String> messageBundle = new HashMap<>();
 
     /**
+     * The mapping from language-independent key to the message in the
+     * default (untranslated) message file.  Used as a fallback when a
+     * translated value is unusable.
+     */
+    private static final Map<String, String> defaultBundle = new HashMap<>();
+
+    /**
      * A map with Selector values and the tag keys used in choice
      * formats.
      */
@@ -152,6 +159,7 @@ public class Messages {
      */
     public static void loadMessageBundle(Locale locale) {
         messageBundle.clear(); // Reset the message bundle.
+        defaultBundle.clear();
 
         if (!NumberRules.isInitialized()) {
             // attempt to read grammatical rules
@@ -177,6 +185,8 @@ public class Messages {
             if (!f.canRead()) continue;
             try {
                 loadMessages(Files.newInputStream(f.toPath()));
+                // The untranslated file is always first in the list
+                if (defaultBundle.isEmpty()) defaultBundle.putAll(messageBundle);
             } catch (IOException ioe) {
                 System.err.println("Failed to load messages from "
                     + f.getPath() + ": " + ioe.getMessage());
@@ -713,6 +723,22 @@ public class Messages {
         // otherwise replace variables in the text
         message = replaceChoices(message, null);
         return message.trim();
+    }
+
+    /**
+     * Get the text mapping for a particular identifier in the default
+     * (untranslated) message file.  Returns the key as the value if
+     * there is no mapping found.
+     *
+     * Useful for values that are not meant to be translated, such as
+     * keyboard accelerators, when a translation turns out to be bad.
+     *
+     * @param messageId The key of the message to find.
+     * @return String text mapping or the key
+     */
+    public static String defaultMessage(String messageId) {
+        String message = defaultBundle.get(messageId);
+        return (message == null) ? messageId : message.trim();
     }
 
     /**

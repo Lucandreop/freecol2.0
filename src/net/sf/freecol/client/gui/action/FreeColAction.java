@@ -141,7 +141,17 @@ public abstract class FreeColAction extends AbstractAction
         String acceleratorKey = id + ".accelerator";
         String accelerator = Messages.message(acceleratorKey);
         if (!accelerator.equals(acceleratorKey)) {
-            setAccelerator(KeyStroke.getKeyStroke(accelerator));
+            KeyStroke keyStroke = KeyStroke.getKeyStroke(accelerator);
+            if (keyStroke == null) {
+                // Translators sometimes localize the key names
+                // (e.g. "Ctrl C", "Espaço"), which KeyStroke can not
+                // parse, so fall back to the untranslated accelerator.
+                String fallback = Messages.defaultMessage(acceleratorKey);
+                keyStroke = KeyStroke.getKeyStroke(fallback);
+                logger.warning("Unparseable accelerator \"" + accelerator
+                    + "\" for " + id + ", using \"" + fallback + "\"");
+            }
+            setAccelerator(keyStroke);
         }
     }
 
