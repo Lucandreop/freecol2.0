@@ -121,6 +121,7 @@ import net.sf.freecol.common.model.ProductionType;
 import net.sf.freecol.common.model.Specification;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Tile;
+import net.sf.freecol.common.model.TileType;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.model.UnitLocation.NoAddReason;
 import net.sf.freecol.common.model.UnitType;
@@ -210,6 +211,9 @@ public final class ColonyPanel extends PortPanel
 
     /** Space around the colony name banner at the top of the town. */
     private static final int BANNER_MARGIN = 6;
+
+    /** The unscaled size of the land texture under the town. */
+    private static final Dimension TOWN_LAND_SIZE = new Dimension(256, 128);
     
     private boolean fullscreen = false;
 
@@ -2239,7 +2243,42 @@ public final class ColonyPanel extends PortPanel
          */
         @Override
         protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
+            final TownPlan plan
+                = (getLayout() instanceof BuildingsLayoutManager)
+                ? ((BuildingsLayoutManager)getLayout()).getPlan()
+                : null;
+            if (plan != null && getColony() != null) {
+                // Draw the town the buildings stand in
+                final ImageLibrary lib = getImageLibrary();
+                final TileType tileType = getColony().getTile().getType();
+                final TileType plains
+                    = getSpecification().getTileType("model.tile.plains");
+                final BufferedImage land = lib.getTerrainImage(tileType,
+                    0, 0, lib.scale(TOWN_LAND_SIZE));
+                // Mix in some patchy plains grass, as the townsfolk
+                // wear the land down
+                final BufferedImage worn
+                    = (plains == null || plains == tileType) ? null
+                    : lib.getTerrainImage(plains, 0, 0,
+                                          lib.scale(TOWN_LAND_SIZE));
+                // Groves of the trees that grow round about
+                final TileType forest = (tileType.isForested()) ? tileType
+                    : getSpecification().getTileType("model.tile.mixedForest");
+                final BufferedImage trees = (forest == null) ? null
+                    : lib.getForestImage(forest, lib.scale(TOWN_LAND_SIZE));
+                TownPainter.paint((Graphics2D)g, getWidth(), getHeight(),
+                    plan, land, worn, trees, p ->
+                        (p.component instanceof ASingleBuildingPanel)
+                        ? lib.getScaledBuildingImage(
+                            ((ASingleBuildingPanel)p.component).getBuilding())
+                        : (p.empty) ? lib.getScaledBuildingEmptyLandImage()
+                        : null);
+                TownPainter.paintSigns((Graphics2D)g, plan, lib,
+                    FontLibrary.getScaledFont("simple-bold-tiny"),
+                    getWidth());
+            } else {
+                super.paintComponent(g);
+            }
             if (fullscreen && getColony() != null) {
                 // The layout keeps this area free of buildings
                 final BufferedImage banner = getFullscreenTitleImage();
@@ -2256,6 +2295,9 @@ public final class ColonyPanel extends PortPanel
             final Colony colony = getColony();
             if (colony == null) return;
             cleanup();
+            ((BuildingsLayoutManager)getLayout()).setRoadWidths(
+                getImageLibrary().scaleInt(12),
+                getImageLibrary().scaleInt(22));
             
             final List<BuildingType> allBuildableTypes = getSpecification().getBuildingTypeList().stream()
                     .filter(bt -> bt.getUpgradesFrom() == null)
@@ -2273,9 +2315,13 @@ public final class ColonyPanel extends PortPanel
                 }
                 final List<Building> btBuildings = constructedBuildings.get(bt);
                 if (btBuildings == null) {
-                    final JPanel emptyPlot = new EmptyBuildingSite();
+                    final JPanel emptyPlot = new EmptyBuildingSite(bt);
                     final Dimension size = getImageLibrary().determineMaxSizeUsingSizeFromAllLevels(bt, colony.getOwner());
-                    emptyPlot.setMinimumSize(size);
+                    // The town layout only needs room for the empty land
+                    final BufferedImage land = getImageLibrary()
+                        .getScaledBuildingEmptyLandImage();
+                    emptyPlot.setMinimumSize(new Dimension(land.getWidth(),
+                                                           land.getHeight()));
                     emptyPlot.setPreferredSize(size);
                     emptyPlot.setSize(size);
                     add(emptyPlot);
@@ -2494,8 +2540,17 @@ public final class ColonyPanel extends PortPanel
         }
         
         public final class EmptyBuildingSite extends JPanel{
-            EmptyBuildingSite() {
+
+            /** The type of building that could stand here. */
+            private final BuildingType buildingType;
+
+            EmptyBuildingSite(BuildingType buildingType) {
+                this.buildingType = buildingType;
                 setOpaque(false);
+            }
+
+            public BuildingType getBuildingType() {
+                return this.buildingType;
             }
             
             protected void paintComponent(Graphics g) {
