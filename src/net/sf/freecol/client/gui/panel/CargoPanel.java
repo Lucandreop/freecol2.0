@@ -274,8 +274,11 @@ public class CargoPanel extends FreeColPanel
      * @param g The {@code Graphics} to paint with.
      * @param text The hint.
      * @param size The size of the panel.
+     * @param where How far down the panel to put the hint, from 0 at
+     *     the top to 1 at the bottom.
      */
-    static void paintHint(Graphics g, String text, Dimension size) {
+    static void paintHint(Graphics g, String text, Dimension size,
+                          float where) {
         final Graphics2D g2d = (Graphics2D)g.create();
         try {
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
@@ -283,7 +286,8 @@ public class CargoPanel extends FreeColPanel
             g2d.setFont(FontLibrary.getScaledFont("simple-bold-small"));
             final FontMetrics fm = g2d.getFontMetrics();
             final int x = (size.width - fm.stringWidth(text)) / 2;
-            final int y = (size.height + fm.getAscent() - fm.getDescent()) / 2;
+            final int y = Math.round(size.height * where)
+                + (fm.getAscent() - fm.getDescent()) / 2;
             g2d.setColor(new Color(0, 0, 0, 150));
             g2d.drawString(text, x + 1, y + 1);
             g2d.setColor(new Color(250, 236, 205, 220));
@@ -318,7 +322,7 @@ public class CargoPanel extends FreeColPanel
             }
             g.drawImage(unavailable, x, 0, null);
             // Say what this empty space is for
-            paintHint(g, Messages.message("cargoPanel.empty"), size);
+            paintHint(g, Messages.message("cargoPanel.empty"), size, 0.5f);
             return;
         }
         

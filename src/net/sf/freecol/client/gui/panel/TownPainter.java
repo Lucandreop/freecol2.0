@@ -625,17 +625,7 @@ public final class TownPainter {
             streets.add(new Area(avenue(view, r, road, 0f, 1f)));
         }
 
-        // A soft, worn edge where the grass meets the dirt.
-        for (int i = 3; i >= 1; i--) {
-            g.setStroke(new BasicStroke(road * 0.18f * i,
-                    BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            g.setColor(new Color(DIRT_EDGE.getRed(), DIRT_EDGE.getGreen(),
-                                 DIRT_EDGE.getBlue(), 40));
-            g.draw(streets);
-        }
-        g.setPaint(new TexturePaint(getDirtTexture(road),
-                new Rectangle(0, 0, 4 * road, 4 * road)));
-        g.fill(streets);
+        paintDirt(g, streets, road);
 
         // Cart ruts along each street.
         final Shape oldClip = g.getClip();
@@ -705,6 +695,73 @@ public final class TownPainter {
         p.lineTo(cx + wb * (from - 0.5f), bottom);
         p.closePath();
         return p;
+    }
+
+    /**
+     * Fill an area with dirt, with a soft, worn edge where the grass
+     * meets the dirt.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param area The area to fill.
+     * @param road The width of a street.
+     */
+    private static void paintDirt(Graphics2D g, Shape area, int road) {
+        for (int i = 3; i >= 1; i--) {
+            g.setStroke(new BasicStroke(road * 0.18f * i,
+                    BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.setColor(new Color(DIRT_EDGE.getRed(), DIRT_EDGE.getGreen(),
+                                 DIRT_EDGE.getBlue(), 40));
+            g.draw(area);
+        }
+        g.setPaint(new TexturePaint(getDirtTexture(road),
+                new Rectangle(0, 0, 4 * road, 4 * road)));
+        g.fill(area);
+    }
+
+    /**
+     * Paint the land just outside the town, where the colonists who
+     * are not working wait: the same land as the town, with the avenue
+     * running on down from the town to a road along the bottom.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param width The width of the land.
+     * @param height The height of the land.
+     * @param land The terrain image, or null.
+     * @param worn The worn grass image, or null.
+     * @param road The width of a street.
+     * @param avenueX The x coordinate of the middle of the avenue.
+     */
+    public static void paintOutskirts(Graphics2D g, int width, int height,
+                                      BufferedImage land, BufferedImage worn,
+                                      int road, int avenueX) {
+        final Graphics2D g2d = (Graphics2D)g.create();
+        try {
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                 RenderingHints.VALUE_ANTIALIAS_ON);
+            paintLand(g2d, width, height, land, worn);
+            paintWear(g2d, width, height, road);
+            // The colonists stand on the road, so it runs along the
+            // bottom, where their feet are.
+            final float roadY = height - road * 1.6f;
+            final float arc = road * 0.8f;
+            final Area roads = new Area(new RoundRectangle2D.Float(-road,
+                    roadY, width + 2 * road, road, arc, arc));
+            roads.add(new Area(new RoundRectangle2D.Float(avenueX - road / 2f,
+                    -road, road, roadY + 2 * road, arc, arc)));
+            paintDirt(g2d, roads, road);
+            // Worn below the land: shade the far edge
+            g2d.setPaint(new GradientPaint(0, roadY,
+                    new Color(40, 25, 10, 110), 0, roadY + road * 0.4f,
+                    new Color(40, 25, 10, 0)));
+            g2d.fill(new Rectangle.Float(0, roadY, width, road * 0.4f));
+            // A little shade from the town above, and darker edges
+            g2d.setPaint(new GradientPaint(0, 0, new Color(20, 12, 0, 70),
+                    0, road * 0.8f, new Color(20, 12, 0, 0)));
+            g2d.fillRect(0, 0, width, Math.round(road * 0.8f));
+            paintVignette(g2d, width, height);
+        } finally {
+            g2d.dispose();
+        }
     }
 
     /**

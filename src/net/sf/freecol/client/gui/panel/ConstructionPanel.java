@@ -25,6 +25,7 @@ import static net.sf.freecol.common.util.StringUtils.getBreakingPoint;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Image;
 import java.awt.event.MouseAdapter;
@@ -206,11 +207,11 @@ public class ConstructionPanel extends MigPanel
                     "height 20:");
             }
             // When will it be done, or why is it not getting done?
-            final JLabel status = new JLabel("<html><div style='text-align:center;width:"
-                + lib.scaleInt(210) + "px'>"
-                + Messages.message(getBuildStatus(colony, buildable))
-                + "</div></html>");
-            status.setFont(font.deriveFont(font.getSize2D() * 0.85f));
+            final Font statusFont = font.deriveFont(font.getSize2D() * 0.85f);
+            final JLabel status = new JLabel(wrap(
+                Messages.message(getBuildStatus(colony, buildable)),
+                getFontMetrics(statusFont), lib.scaleInt(190)));
+            status.setFont(statusFont);
             status.setForeground(getForeground());
             infoPanel.add(status);
             add(infoPanel);
@@ -220,6 +221,34 @@ public class ConstructionPanel extends MigPanel
         repaint();
     }
 
+
+    /**
+     * Break a text into centered lines no wider than a given width.
+     *
+     * @param text The text.
+     * @param fm The {@code FontMetrics} of the font it is shown in.
+     * @param width The greatest width of a line.
+     * @return The text as HTML for a label.
+     */
+    private static String wrap(String text, FontMetrics fm, int width) {
+        final StringBuilder sb = new StringBuilder("<html><center>");
+        String line = "";
+        for (String word : text.split(" ")) {
+            final String longer = (line.isEmpty()) ? word : line + " " + word;
+            if (!line.isEmpty() && fm.stringWidth(longer) > width) {
+                sb.append(escape(line)).append("<br>");
+                line = word;
+            } else {
+                line = longer;
+            }
+        }
+        return sb.append(escape(line)).append("</center></html>").toString();
+    }
+
+    private static String escape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;");
+    }
 
     /**
      * Say when a build will be done, or why it is not getting done.

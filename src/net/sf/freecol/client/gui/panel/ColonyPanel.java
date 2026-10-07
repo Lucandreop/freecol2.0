@@ -217,6 +217,10 @@ public final class ColonyPanel extends PortPanel
     
     private boolean fullscreen = false;
 
+    /** A picture of the land outside the town, and what it shows. */
+    private BufferedImage outskirtsImage = null;
+    private String outskirtsKey = null;
+
     /** The colonist being dragged, whose possible work is previewed. */
     private Unit previewUnit = null;
 
@@ -568,8 +572,9 @@ public final class ColonyPanel extends PortPanel
             final Graphics2D hint = (Graphics2D)g.create(inPortScroll.getX(),
                 inPortScroll.getY(), inPortScroll.getWidth(),
                 inPortScroll.getHeight());
+            // Low down, on the water, clear of the frame above
             CargoPanel.paintHint(hint, Messages.message("colonyPanel.port.empty"),
-                                 inPortScroll.getSize());
+                                 inPortScroll.getSize(), 0.8f);
             hint.dispose();
         }
         
@@ -579,12 +584,26 @@ public final class ColonyPanel extends PortPanel
                 .sorted(Comparator.comparing(Building::getId)) // Stable sort. Might add a z-index property later.
                 .collect(Collectors.toList());
         
-        if (defensiveBuildings.isEmpty()) {
+        // When the buildings stand in a town, the land outside it is
+        // part of the town too
+        final TownPlan townPlan = buildingsPanel.getTownPlan();
+        if (townPlan != null) {
+            paintOutskirts(g2d, townPlan);
+        } else if (defensiveBuildings.isEmpty()) {
             paintOutsideColonyBackground(g2d, null);
         }
-        
+
         for (Building defensiveBuilding : defensiveBuildings) {
             paintOutsideColonyBackground(g2d, defensiveBuilding.getType());
+        }
+        if (townPlan != null && outsideColonyPanel.getComponentCount() == 0) {
+            final Graphics2D hint = (Graphics2D)g.create(
+                outsideColonyScroll.getX(), outsideColonyScroll.getY(),
+                outsideColonyScroll.getWidth(), outsideColonyScroll.getHeight());
+            CargoPanel.paintHint(hint,
+                Messages.message("colonyPanel.outside.empty"),
+                outsideColonyScroll.getSize(), 0.4f);
+            hint.dispose();
         }
         
         final BufferedImage unavailable = getImageLibrary().getScaledCargoHold(false);
@@ -950,6 +969,66 @@ public final class ColonyPanel extends PortPanel
         } finally {
             g2d.dispose();
         }
+    }
+
+    /**
+     * Paint the land outside the town, where the colonists who are not
+     * working wait.
+     *
+     * @param g2d The {@code Graphics2D} to paint with.
+     * @param plan The {@code TownPlan} of the town.
+     */
+    private void paintOutskirts(Graphics2D g2d, TownPlan plan) {
+        final Rectangle r = outsideColonyScroll.getBounds();
+        if (r.width <= 0 || r.height <= 0) return;
+        // The avenue runs on down from the town
+        int avenueX = r.width / 2;
+        final List<Rectangle> avenue = plan.getAvenue();
+        if (!avenue.isEmpty()) {
+            final Rectangle a = avenue.get(avenue.size() - 1);
+            avenueX = a.x + a.width / 2 + buildingsScroll.getX() - r.x;
+        }
+        final String key = r.width + "x" + r.height + "/" + avenueX
+            + "/" + plan.getRoad() + "/" + getColony().getTile().getType();
+        if (outskirtsImage == null || !key.equals(outskirtsKey)) {
+            outskirtsImage = new BufferedImage(r.width, r.height,
+                                               BufferedImage.TYPE_INT_ARGB);
+            final Graphics2D og = outskirtsImage.createGraphics();
+            try {
+                TownPainter.paintOutskirts(og, r.width, r.height,
+                    getTownLand(), getTownWornLand(), plan.getRoad(), avenueX);
+            } finally {
+                og.dispose();
+            }
+            outskirtsKey = key;
+        }
+        g2d.drawImage(outskirtsImage, r.x, r.y, null);
+    }
+
+    /**
+     * Get a picture of the land the colony stands on.
+     *
+     * @return The terrain image.
+     */
+    private BufferedImage getTownLand() {
+        final ImageLibrary lib = getImageLibrary();
+        return lib.getTerrainImage(getColony().getTile().getType(), 0, 0,
+                                   lib.scale(TOWN_LAND_SIZE));
+    }
+
+    /**
+     * Get a picture of patchy plains grass, to mix into the land of the
+     * town as the townsfolk wear it down.
+     *
+     * @return The terrain image, or null if the land is plains already.
+     */
+    private BufferedImage getTownWornLand() {
+        final ImageLibrary lib = getImageLibrary();
+        final TileType tileType = getColony().getTile().getType();
+        final TileType plains
+            = getSpecification().getTileType("model.tile.plains");
+        return (plains == null || plains == tileType) ? null
+            : lib.getTerrainImage(plains, 0, 0, lib.scale(TOWN_LAND_SIZE));
     }
 
     private void paintOutsideColonyBackground(Graphics2D g2d, BuildingType buildingType) {
@@ -2428,12 +2507,21 @@ public final class ColonyPanel extends PortPanel
         /**
          * {@inheritDoc}
          */
-        @Override
-        protected void paintComponent(Graphics g) {
-            final TownPlan plan
-                = (getLayout() instanceof BuildingsLayoutManager)
+        /**
+         * Get the plan of the town the buildings stand in.
+         *
+         * @return The {@code TownPlan}, or null if the buildings are
+         *     not laid out as a town.
+         */
+        public TownPlan getTownPlan() {
+            return (getLayout() instanceof BuildingsLayoutManager)
                 ? ((BuildingsLayoutManager)getLayout()).getPlan()
                 : null;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            final TownPlan plan = getTownPlan();
             if (plan != null && getColony() != null) {
                 // The town only changes with its plan, so keep a picture
                 // of it rather than drawing it on every repaint
@@ -2488,16 +2576,8 @@ public final class ColonyPanel extends PortPanel
         private void paintTown(Graphics2D g, TownPlan plan) {
             final ImageLibrary lib = getImageLibrary();
             final TileType tileType = getColony().getTile().getType();
-            final TileType plains
-                = getSpecification().getTileType("model.tile.plains");
-            final BufferedImage land = lib.getTerrainImage(tileType,
-                0, 0, lib.scale(TOWN_LAND_SIZE));
-            // Mix in some patchy plains grass, as the townsfolk
-            // wear the land down
-            final BufferedImage worn
-                = (plains == null || plains == tileType) ? null
-                : lib.getTerrainImage(plains, 0, 0,
-                                      lib.scale(TOWN_LAND_SIZE));
+            final BufferedImage land = getTownLand();
+            final BufferedImage worn = getTownWornLand();
             // Groves of the trees that grow round about
             final TileType forest = (tileType.isForested()) ? tileType
                 : getSpecification().getTileType("model.tile.mixedForest");
