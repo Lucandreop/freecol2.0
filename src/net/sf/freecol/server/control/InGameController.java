@@ -1262,8 +1262,14 @@ public final class InGameController extends Controller {
     public ChangeSet claimLand(ServerPlayer serverPlayer, Tile tile,
                                Settlement settlement, int price) {
         final ServerGame sg = getGame();
+        final Player oldOwner = tile.getOwner();
         ChangeSet cs = new ChangeSet();
         serverPlayer.csClaimLand(tile, settlement, price, cs);
+        if (price < 0 && oldOwner != null && oldOwner.isIndian()
+            && serverPlayer.isEuropean()) {
+            serverPlayer.csModifyNativeTrust(oldOwner,
+                ServerPlayer.TRUST_LAND_STOLEN, random, cs);
+        }
 
         if (settlement != null && serverPlayer.isEuropean()) {
             // Define Coronado to make all colony-owned tiles visible
@@ -1671,6 +1677,8 @@ public final class InGameController extends Controller {
             sis.updateWantedGoods();
             tile.updateIndianSettlement(serverPlayer);
             cs.add(See.only(serverPlayer), tile);
+            serverPlayer.csModifyNativeTrust(sis.getOwner(),
+                ServerPlayer.TRUST_GIFT, random, cs);
         }
         nt.setGift(true);
 
@@ -2361,6 +2369,8 @@ public final class InGameController extends Controller {
             cs.add(See.perhaps().always(serverPlayer), sUnit.getTile());
 
             sis.csChangeMissionary(sUnit, cs);//+vis(serverPlayer)
+            serverPlayer.csModifyNativeTrust(is.getOwner(),
+                ServerPlayer.TRUST_MISSION, random, cs);
             break;
         }
 
@@ -2805,6 +2815,29 @@ public final class InGameController extends Controller {
         return cs;
     }
 
+    /**
+     * Answer the bold proposal of a founding father.
+     *
+     * @param serverPlayer The {@code ServerPlayer} that is answering.
+     * @param father The {@code FoundingFather} that made the proposal.
+     * @param accept True if the proposal is accepted.
+     * @return A {@code ChangeSet} containing the response.
+     */
+    public ChangeSet fatherDilemma(ServerPlayer serverPlayer,
+                                   FoundingFather father, boolean accept) {
+        if (serverPlayer.getPendingDilemma() != father) {
+            return serverPlayer.clientError("No proposal pending from: "
+                + father.getId());
+        }
+        serverPlayer.setPendingDilemma(null);
+
+        ChangeSet cs = new ChangeSet();
+        if (accept && serverPlayer.canAffordDilemma(father)) {
+            serverPlayer.csAcceptDilemma(father, random, cs);
+        }
+        return cs;
+    }
+
 
     /**
      * Move a unit.
@@ -3170,6 +3203,8 @@ public final class InGameController extends Controller {
             item = nt.getItem();
             csBuy(unit, item.getGoods(), item.getPrice(),
                   (ServerIndianSettlement)is, cs);
+            ((ServerPlayer)otherPlayer).csModifyNativeTrust(serverPlayer,
+                ServerPlayer.TRUST_TRADE, random, cs);
             nt.setBuy(false);
             nt.addToUnit(item);
             session.getNativeTrade().mergeFrom(nt);
@@ -3182,6 +3217,8 @@ public final class InGameController extends Controller {
             item = nt.getItem();
             csSell(unit, item.getGoods(), item.getPrice(),
                    (ServerIndianSettlement)is, cs);
+            ((ServerPlayer)otherPlayer).csModifyNativeTrust(serverPlayer,
+                ServerPlayer.TRUST_TRADE, random, cs);
             nt.setSell(false);
             nt.removeFromUnit(item);
             session.getNativeTrade().mergeFrom(nt);
@@ -3194,6 +3231,8 @@ public final class InGameController extends Controller {
             item = nt.getItem();
             csGift(unit, item.getGoods(), item.getPrice(),
                    (ServerIndianSettlement)is, cs);
+            ((ServerPlayer)otherPlayer).csModifyNativeTrust(serverPlayer,
+                ServerPlayer.TRUST_GIFT, random, cs);
             nt.setGift(false);
             nt.removeFromUnit(item);
             session.getNativeTrade().mergeFrom(nt);

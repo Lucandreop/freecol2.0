@@ -28,6 +28,7 @@ public class AllTests {
     public static Test suite() {
         TestSuite suite = new TestSuite("Test for net.sf.freecol.server.ai");
         //$JUnit-BEGIN$
+        suite.addTestSuite(AIPersonalityTest.class);
         suite.addTestSuite(AIColonyTest.class);
         suite.addTestSuite(ContactTest.class);
         suite.addTestSuite(ColonyPlanTest.class);

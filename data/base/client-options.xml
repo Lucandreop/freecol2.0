@@ -128,6 +128,10 @@
         <!-- Whether to display borders by default or not. -->
         <booleanOption id="model.option.displayBorders"
                        defaultValue="false"/>
+        <!-- Whether to tint the map by the value of the tiles as
+             colony sites. -->
+        <booleanOption id="model.option.displayColonySites"
+                       defaultValue="false"/>
         <!-- Whether to draw the fog of war on the actual map or not. -->
         <booleanOption id="model.option.displayFogOfWar"
                        defaultValue="false"/>
@@ -209,6 +213,9 @@
         <booleanOption id="model.option.guiShowSonsOfLiberty"
                        defaultValue="true"/>
         <booleanOption id="model.option.guiShowTutorial"
+                       defaultValue="true"/>
+        <!-- Show the advisor warnings about serious problems. -->
+        <booleanOption id="model.option.guiShowAdvisor"
                        defaultValue="true"/>
         <booleanOption id="model.option.guiShowUnitAdded"
                        defaultValue="true"/>
@@ -391,5 +398,7 @@
 
     <optionGroup id="clientOptions.etc" editable="false" visible="false">
       <!-- Placement options, set dynamically, not from the options dialogs. -->
+      <!-- The advisor tips already shown. -->
+      <textOption id="model.option.tutorialTipsSeen" defaultValue=""/>
     </optionGroup>
 </optionGroup>

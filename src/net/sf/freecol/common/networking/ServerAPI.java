@@ -226,6 +226,18 @@ public abstract class ServerAPI {
     }
 
     /**
+     * Server query-response to answer the bold proposal of a founding
+     * father.
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     * @param accept Accept or reject the proposal.
+     * @return True if the server interaction succeeded.
+     */
+    public boolean answerFatherDilemma(FoundingFather father, boolean accept) {
+        return ask(new FatherDilemmaMessage(father).setResult(accept));
+    }
+
+    /**
      * Server query-response for finding out the skill taught at a settlement.
      *
      * @param unit The {@code Unit} that is asking.

@@ -237,7 +237,10 @@ public final class Canvas extends JDesktopPane {
         setFocusTraversalKeysEnabled(false);
         // Create key bindings for all actions
         for (FreeColAction action  : freeColClient.getActionManager().getFreeColActions()) {
-            if (!action.isCanvasKeyBinding()) {
+            // Actions without an accelerator (bad translation, or
+            // cleared by the user in the options) have nothing to bind.
+            if (!action.isCanvasKeyBinding()
+                || action.getAccelerator() == null) {
                 continue;
             }
             getInputMap().put(action.getAccelerator(), action.getId());

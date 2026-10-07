@@ -93,6 +93,7 @@ import net.sf.freecol.common.model.Goods;
 import net.sf.freecol.common.model.GoodsContainer;
 import net.sf.freecol.common.model.GoodsType;
 import net.sf.freecol.common.model.HistoryEvent;
+import net.sf.freecol.common.model.IndianNationType;
 import net.sf.freecol.common.model.IndianSettlement;
 import net.sf.freecol.common.model.Location;
 import net.sf.freecol.common.model.Market;
@@ -108,6 +109,7 @@ import net.sf.freecol.common.model.Specification;
 import net.sf.freecol.common.model.Stance;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Tension;
+import net.sf.freecol.common.model.TrustLevel;
 import net.sf.freecol.common.model.Tile;
 import net.sf.freecol.common.model.TradeRoute;
 import net.sf.freecol.common.model.Turn;
@@ -121,6 +123,7 @@ import net.sf.freecol.common.networking.ChangeSet;
 import net.sf.freecol.common.networking.ChangeSet.See;
 import net.sf.freecol.common.networking.ChooseFoundingFatherMessage;
 import net.sf.freecol.common.networking.Connection;
+import net.sf.freecol.common.networking.FatherDilemmaMessage;
 import net.sf.freecol.common.networking.FirstContactMessage;
 import net.sf.freecol.common.networking.IndianDemandMessage;
 import net.sf.freecol.common.networking.LootCargoMessage;
@@ -170,6 +173,27 @@ public class ServerPlayer extends Player implements TurnTaker {
     public static final int SCORE_INDEPENDENCE_BONUS_SECOND = 50;
     public static final int SCORE_INDEPENDENCE_BONUS_THIRD = 25;
 
+    /** Trust gained with a native nation by trading with it. */
+    public static final int TRUST_TRADE = 3;
+    /** Trust gained with a native nation by giving it a gift. */
+    public static final int TRUST_GIFT = 4;
+    /** Trust gained with a native nation by establishing a mission. */
+    public static final int TRUST_MISSION = 6;
+    /** Trust lost with a native nation by stealing its land. */
+    public static final int TRUST_LAND_STOLEN = -15;
+    /** Trust gained each turn a native nation is happy with us. */
+    public static final int TRUST_PEACEFUL_TURN = 1;
+    /** Chance each turn an integrated nation sends a volunteer. */
+    public static final int VOLUNTEER_PERCENT = 10;
+    /** Chance each turn a settlement of an integrated nation joins us. */
+    public static final int JOIN_PERCENT = 3;
+    /** Volunteers come from settlements this close to a colony. */
+    public static final int INTEGRATION_RANGE = 4;
+    /** Settlements this close to a colony may join it. */
+    public static final int JOIN_RANGE = 3;
+    /** Settlements with at most this many people may join a colony. */
+    public static final int JOIN_MAXIMUM_SIZE = 3;
+
     // Do not serialize anything below.
 
     /** The connection for this player. */
@@ -177,6 +201,9 @@ public class ServerPlayer extends Player implements TurnTaker {
 
     /** Remaining emigrants to select due to a fountain of youth */
     private int remainingEmigrants = 0;
+
+    /** The founding father whose bold proposal awaits an answer. */
+    private FoundingFather pendingDilemma = null;
 
     /** Players with respect to which stance has changed. */
     private final List<Player> stanceDirty = new ArrayList<>();
@@ -1404,6 +1431,221 @@ public class ServerPlayer extends Player implements TurnTaker {
     }
 
     /**
+     * Change the trust a native nation has in this player, and apply
+     * the effects of reaching a new trust level.
+     *
+     * @param natives The native {@code Player}.
+     * @param add The amount to add to the trust (may be negative).
+     * @param random A pseudo-random number source.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    public void csModifyNativeTrust(Player natives, int add, Random random,
+                                    ChangeSet cs) {
+        final TrustLevel oldLevel = getNativeTrustLevel(natives);
+        final int oldTrust = getNativeTrust(natives);
+        setNativeTrust(natives, oldTrust + add);
+        if (getNativeTrust(natives) == oldTrust) return;
+        final TrustLevel newLevel = getNativeTrustLevel(natives);
+        cs.add(See.only(this), this);
+        if (newLevel == oldLevel) return;
+
+        if (newLevel.isAtLeast(TrustLevel.ALLY)
+            && !oldLevel.isAtLeast(TrustLevel.ALLY)) {
+            csBecomeAllies(natives, random, cs);
+        }
+        cs.addMessage(this,
+            new ModelMessage(ModelMessage.MessageType.FOREIGN_DIPLOMACY,
+                ((newLevel.ordinal() > oldLevel.ordinal())
+                    ? "model.player.nativeTrust.up"
+                    : "model.player.nativeTrust.down"), this)
+                .addStringTemplate("%nation%", natives.getNationLabel())
+                .add("%level%", newLevel.getKey() + ".name")
+                .add("%benefits%", newLevel.getKey() + ".description"));
+    }
+
+    /**
+     * A native nation becomes an ally: its settlements that have
+     * already taught their skill learn a new one to teach, and it
+     * shows this player its lands.
+     *
+     * @param natives The native {@code Player}.
+     * @param random A pseudo-random number source.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    private void csBecomeAllies(Player natives, Random random, ChangeSet cs) {
+        final IndianNationType nationType
+            = (IndianNationType)natives.getNationType();
+        Set<Tile> lands = new HashSet<>();
+        for (IndianSettlement is : natives.getIndianSettlementList()) {
+            lands.addAll(is.getOwnedTiles());
+            if (is.getLearnableSkill() != null) continue;
+            UnitType skill = RandomChoice.getWeightedRandom(logger,
+                "Ally skill", nationType.generateSkillsForTile(is.getTile()),
+                random);
+            if (skill != null) {
+                is.setLearnableSkill(skill);
+                cs.add(See.perhaps(), is);
+            }
+        }
+        Set<Tile> explored = exploreTiles(lands);
+        if (!explored.isEmpty()) {
+            cs.add(See.only(this), explored);
+            invalidateCanSeeTiles();//+vis(this)
+        }
+    }
+
+    /**
+     * Update the trust of the native nations in this player at the
+     * start of a turn, and let integrated nations send people.
+     *
+     * Trust grows slowly while a nation is happy with this player, and
+     * falls when it is not.  War destroys it.
+     *
+     * @param random A pseudo-random number source.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    public void csUpdateNativeTrust(Random random, ChangeSet cs) {
+        for (Player natives : getGame().getLiveNativePlayerList()) {
+            if (!natives.hasContacted(this)) continue;
+            int add;
+            if (natives.atWarWith(this)) {
+                add = -getNativeTrust(natives);
+            } else {
+                switch (natives.getTension(this).getLevel()) {
+                case HAPPY: add = TRUST_PEACEFUL_TURN; break;
+                case CONTENT: add = 0; break;
+                case DISPLEASED: add = -1; break;
+                case ANGRY: add = -2; break;
+                default: add = -4; break;
+                }
+            }
+            if (add != 0) csModifyNativeTrust(natives, add, random, cs);
+            if (getNativeTrustLevel(natives) == TrustLevel.INTEGRATION) {
+                csNativeIntegration(natives, random, cs);
+            }
+        }
+    }
+
+    /**
+     * A native nation that trusts this player completely sends
+     * volunteers to nearby colonies, and small settlements may join
+     * a colony altogether, all as free colonists.
+     *
+     * Capitals and the last settlement of a nation never join.
+     *
+     * @param natives The native {@code Player}.
+     * @param random A pseudo-random number source.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    private void csNativeIntegration(Player natives, Random random,
+                                     ChangeSet cs) {
+        final List<IndianSettlement> settlements
+            = natives.getIndianSettlementList();
+        if (randomInt(logger, "Native volunteer", random, 100)
+            < VOLUNTEER_PERCENT) {
+            List<IndianSettlement> sources = transform(settlements,
+                is -> is.getUnitCount() > 1
+                    && getNearestColony(is, INTEGRATION_RANGE) != null);
+            if (!sources.isEmpty()) {
+                IndianSettlement is = getRandomMember(logger,
+                    "Volunteer settlement", sources, random);
+                Colony colony = getNearestColony(is, INTEGRATION_RANGE);
+                ((ServerUnit)is.getUnitList().get(0))
+                    .csRemove(See.only(natives), is, cs);
+                csNewColonists(colony, 1, cs);
+                cs.addMessage(this,
+                    new ModelMessage(ModelMessage.MessageType.UNIT_ADDED,
+                                     "model.player.nativeVolunteer", colony)
+                        .addName("%settlement%", is.getName())
+                        .addName("%colony%", colony.getName()));
+            }
+        }
+
+        if (settlements.size() > 1
+            && randomInt(logger, "Native joins", random, 100) < JOIN_PERCENT) {
+            List<IndianSettlement> joiners = transform(settlements,
+                is -> !is.isCapital()
+                    && is.getUnitCount() <= JOIN_MAXIMUM_SIZE
+                    && getNearestColony(is, JOIN_RANGE) != null);
+            if (!joiners.isEmpty()) {
+                IndianSettlement is = getRandomMember(logger,
+                    "Joining settlement", joiners, random);
+                csIncorporateSettlement(is,
+                    getNearestColony(is, JOIN_RANGE), cs);
+            }
+        }
+    }
+
+    /**
+     * Get the nearest of this player's colonies to a settlement.
+     *
+     * @param is The {@code IndianSettlement} to look around.
+     * @param range The maximum distance in tiles.
+     * @return The nearest {@code Colony}, or null if none in range.
+     */
+    private Colony getNearestColony(IndianSettlement is, int range) {
+        Colony best = null;
+        int bestDistance = range + 1;
+        for (Colony c : getColonyList()) {
+            int d = c.getTile().getDistanceTo(is.getTile());
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * A native settlement joins a colony: it is removed and its people
+     * arrive at the colony as free colonists.
+     *
+     * Public for the test suite.
+     *
+     * @param is The {@code IndianSettlement} that joins.
+     * @param colony The {@code Colony} it joins.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    public void csIncorporateSettlement(IndianSettlement is, Colony colony,
+                                        ChangeSet cs) {
+        final Player natives = is.getOwner();
+        final String name = is.getName();
+        final int people = Math.max(1, is.getUnitCount());
+
+        // Units away from home stay with their nation
+        for (Unit u : is.getOwnedUnitList()) {
+            if (u.getLocation() == is) continue;
+            u.changeHomeIndianSettlement(null);
+            cs.add(See.only(natives), u);
+        }
+        ((ServerPlayer)natives).csDisposeSettlement(is, cs);
+        csNewColonists(colony, people, cs);
+        cs.addMessage(this,
+            new ModelMessage(ModelMessage.MessageType.UNIT_ADDED,
+                             "model.player.nativeSettlementJoined", colony)
+                .addStringTemplate("%nation%", natives.getNationLabel())
+                .addName("%settlement%", name)
+                .addName("%colony%", colony.getName())
+                .addAmount("%amount%", people));
+    }
+
+    /**
+     * Create free colonists outside a colony.
+     *
+     * @param colony The {@code Colony} they arrive at.
+     * @param number The number of colonists.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    private void csNewColonists(Colony colony, int number, ChangeSet cs) {
+        final UnitType type = getSpecification().getDefaultUnitType(this);
+        final Tile tile = colony.getTile();
+        for (int i = 0; i < number; i++) {
+            new ServerUnit(getGame(), tile, this, type);//-vis: safe, colony
+        }
+        cs.add(See.perhaps(), tile);
+    }
+
+    /**
      * Modifies the hostility against the given player.
      *
      * +til: Handles tile modifications.
@@ -1828,6 +2070,8 @@ outer:  for (Effect effect : effects) {
                     new ChooseFoundingFatherMessage(ffs, null));
             }
 
+            csUpdateNativeTrust(random, cs);
+
             if (updateScore()) {
                 cs.addPartial(See.only(this), this,
                     "score", String.valueOf(this.getScore()));
@@ -2124,6 +2368,113 @@ outer:  for (Effect effect : effects) {
 
         if (europeDirty) cs.add(See.only(this), europe);
         if (visibilityChange) invalidateCanSeeTiles(); //+vis(this)
+
+        // Offer the bold proposal, if the player can afford it.
+        // Human players are asked, AI players take it half of the time.
+        if (canAffordDilemma(father)) {
+            if (isAI()) {
+                if (randomInt(logger, "Accept dilemma", random, 2) == 0) {
+                    csAcceptDilemma(father, random, cs);
+                }
+            } else {
+                this.pendingDilemma = father;
+                cs.add(See.only(this), new FatherDilemmaMessage(father));
+            }
+        }
+    }
+
+    /**
+     * Get the father whose bold proposal awaits an answer.
+     *
+     * @return The {@code FoundingFather}, or null if none.
+     */
+    public FoundingFather getPendingDilemma() {
+        return this.pendingDilemma;
+    }
+
+    /**
+     * Set the father whose bold proposal awaits an answer.
+     *
+     * @param father The {@code FoundingFather}, or null to clear.
+     */
+    public void setPendingDilemma(FoundingFather father) {
+        this.pendingDilemma = father;
+    }
+
+    /**
+     * Can this player accept the bold proposal of a founding father?
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     * @return True if there is a proposal and its cost can be paid.
+     */
+    public boolean canAffordDilemma(FoundingFather father) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma == null || hasAcceptedDilemma(father)) return false;
+        switch (dilemma.getCost()) {
+        case GOLD:
+            return checkGold(dilemma.getAmount());
+        case TAX:
+            return getTax() + dilemma.getAmount()
+                <= getSpecification().getInteger(GameOptions.MAXIMUM_TAX);
+        case ROYAL_FORCE:
+            return getMonarch() != null && !isRebel();
+        default:
+            return true;
+        }
+    }
+
+    /**
+     * Accept the bold proposal of a founding father: pay its cost and
+     * gain its extra features.
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     * @param random A pseudo-random number source.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    public void csAcceptDilemma(FoundingFather father, Random random,
+                                ChangeSet cs) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        final int amount = dilemma.getAmount();
+        switch (dilemma.getCost()) {
+        case GOLD:
+            modifyGold(-amount);
+            cs.addPartial(See.only(this), this,
+                "gold", String.valueOf(this.getGold()));
+            break;
+        case TAX:
+            csSetTax(getTax() + amount, cs);
+            break;
+        case NATIVE_TENSION:
+            for (Player p : transform(getGame().getLiveNativePlayers(),
+                                      p -> p.hasContacted(this))) {
+                ((ServerPlayer)p).csModifyTension(this, amount, cs);//+til
+            }
+            break;
+        case EUROPEAN_TENSION:
+            for (Player p : transform(getGame().getLiveEuropeanPlayers(this),
+                                      p -> !p.isREF())) {
+                ((ServerPlayer)p).csModifyTension(this, amount, cs);
+            }
+            break;
+        case ROYAL_FORCE:
+            for (int i = 0; i < amount; i++) getMonarch().addToREF(random);
+            cs.add(See.only(this), getMonarch());
+            break;
+        default:
+            break;
+        }
+
+        acceptDilemma(father);
+        // Kick the SoL bonus if the proposal changes it
+        if (any(dilemma.getModifiers(),
+                matchKeyEquals(Modifier.SOL, Modifier::getId))) {
+            for (Colony c : getColonyList()) c.addLiberty(0);
+        }
+        cs.add(See.only(this), this);
+        cs.addMessage(this,
+            new ModelMessage(ModelMessage.MessageType.SONS_OF_LIBERTY,
+                             "model.player.dilemmaAccepted", this)
+                .addNamed("%foundingFather%", father));
     }
 
     /**

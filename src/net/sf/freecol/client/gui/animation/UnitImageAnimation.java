@@ -144,13 +144,13 @@ public final class UnitImageAnimation extends Animation {
                                            String base, float scale) {
         for (Direction d : trialDirections(dirn)) {
             String szaId = base + downCase(d.toString());
-            SimpleZippedAnimation sza = ImageLibrary.getSZA(szaId, scale);
+            SimpleZippedAnimation sza = getNationalSZA(unit, szaId, scale);
             if (sza != null) {
                 return new UnitImageAnimation(unit, tile, sza);
             }
             // Try the mirrored case
             szaId = base + downCase(d.getEWMirroredDirection().toString());
-            sza = ImageLibrary.getSZA(szaId, scale);
+            sza = getNationalSZA(unit, szaId, scale);
             if (sza != null) {
                 UnitImageAnimation ret = new UnitImageAnimation(unit, tile, sza);
                 ret.setMirrored(true);
@@ -158,6 +158,26 @@ public final class UnitImageAnimation extends Animation {
             }
         }
         return null;
+    }
+
+    /**
+     * Get an animation, preferring the variant for the unit owner's
+     * nation (such as a national uniform) if there is one.
+     *
+     * @param unit The {@code Unit} to animate.
+     * @param szaId The animation resource identifier.
+     * @param scale The scale of the animation.
+     * @return The animation found, or null if none.
+     */
+    private static SimpleZippedAnimation getNationalSZA(Unit unit,
+                                                        String szaId,
+                                                        float scale) {
+        if (unit.getOwner() != null) {
+            SimpleZippedAnimation sza = ImageLibrary.getSZA(szaId + "."
+                + unit.getOwner().getNationResourceKey(), scale);
+            if (sza != null) return sza;
+        }
+        return ImageLibrary.getSZA(szaId, scale);
     }
 
 

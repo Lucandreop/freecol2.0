@@ -54,6 +54,24 @@
           </xs:complexType>
         </xs:element>
 
+        <xs:element name="dilemmaFathers">
+          <xs:complexType>
+            <xs:attribute name="xLength" use="required">
+              <xs:annotation>
+                <xs:documentation>Element count</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
+            <xs:anyAttribute namespace="##local" processContents="skip">
+              <xs:annotation>
+                <xs:documentation>
+                  ID of a father whose bold proposal was accepted,
+                  with the names "x0", "x1", "x2" etc.
+                </xs:documentation>
+              </xs:annotation>
+            </xs:anyAttribute>
+          </xs:complexType>
+        </xs:element>
+
         <xs:element ref="highSeas" />
         <xs:element ref="historyEvent" />
 
@@ -97,6 +115,18 @@
             <xs:attribute name="player" type="xs:string" use="required"/>
             <xs:attribute name="value" type="xs:int" use="optional"
                           default="0"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="nativeTrust">
+          <xs:annotation>
+            <xs:documentation>
+              The trust a native nation has in this player, 0 to 100.
+            </xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:attribute name="player" type="xs:string" use="required"/>
+            <xs:attribute name="value" type="xs:int" use="required"/>
           </xs:complexType>
         </xs:element>
 

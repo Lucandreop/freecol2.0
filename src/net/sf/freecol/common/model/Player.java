@@ -274,6 +274,15 @@ public class Player extends FreeColGameObject implements Nameable {
     protected FoundingFather currentFather;
     /** The offered founding fathers. */
     protected final List<FoundingFather> offeredFathers = new ArrayList<>();
+    /** The founding fathers whose bold proposal was accepted. */
+    protected final Set<FoundingFather> dilemmaFathers = new HashSet<>();
+
+    /**
+     * The trust native nations have in this (European) player, from 0
+     * to TrustLevel.MAXIMUM.  Absent means no trust.
+     */
+    protected final java.util.Map<Player, Integer> nativeTrust
+        = new HashMap<>();
 
     /**
      * The tension levels, 0-1000, with 1000 being maximum hostility.
@@ -1470,6 +1479,105 @@ public class Player extends FreeColGameObject implements Nameable {
         foundingFathers.add(father);
         addFeatures(father);
         for (Colony c : getColonyList()) c.invalidateCache();
+    }
+
+    /**
+     * Get the founding fathers whose bold proposal was accepted.
+     *
+     * @return A set of {@code FoundingFather}s.
+     */
+    public Set<FoundingFather> getDilemmaFathers() {
+        return dilemmaFathers;
+    }
+
+    /**
+     * Set the founding fathers whose bold proposal was accepted.
+     *
+     * @param fathers The new set of {@code FoundingFather}s.
+     */
+    protected void setDilemmaFathers(Set<FoundingFather> fathers) {
+        this.dilemmaFathers.clear();
+        for (FoundingFather ff : fathers) acceptDilemma(ff);
+    }
+
+    /**
+     * Has this player accepted the bold proposal of a founding father?
+     *
+     * @param father The {@code FoundingFather} to check.
+     * @return True if the proposal was accepted.
+     */
+    public boolean hasAcceptedDilemma(FoundingFather father) {
+        return dilemmaFathers.contains(father);
+    }
+
+    /**
+     * Accept the bold proposal of a founding father, adding its extra
+     * features.  The cost is handled by the server.
+     *
+     * @param father The {@code FoundingFather} whose proposal to accept.
+     */
+    public void acceptDilemma(FoundingFather father) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma == null) return;
+        dilemmaFathers.add(father);
+        for (Ability a : dilemma.getAbilities()) addAbility(a);
+        for (Modifier m : dilemma.getModifiers()) addModifier(m);
+        for (Colony c : getColonyList()) c.invalidateCache();
+    }
+
+    /**
+     * Get the trust a native nation has in this player.
+     *
+     * @param natives The native {@code Player}.
+     * @return The trust, from 0 to TrustLevel.MAXIMUM.
+     */
+    public int getNativeTrust(Player natives) {
+        Integer value = nativeTrust.get(natives);
+        return (value == null) ? 0 : value;
+    }
+
+    /**
+     * Set the trust a native nation has in this player.
+     *
+     * @param natives The native {@code Player}.
+     * @param value The new trust, clamped to 0..TrustLevel.MAXIMUM.
+     */
+    public void setNativeTrust(Player natives, int value) {
+        value = Math.max(0, Math.min(TrustLevel.MAXIMUM, value));
+        if (value == 0) {
+            nativeTrust.remove(natives);
+        } else {
+            nativeTrust.put(natives, value);
+        }
+    }
+
+    /**
+     * Get the level of trust a native nation has in this player.
+     *
+     * @param natives The native {@code Player}.
+     * @return The {@code TrustLevel}.
+     */
+    public TrustLevel getNativeTrustLevel(Player natives) {
+        return TrustLevel.fromValue(getNativeTrust(natives));
+    }
+
+    /**
+     * Get all the native trust values.
+     *
+     * @return A map of native player to trust.
+     */
+    protected java.util.Map<Player, Integer> getNativeTrust() {
+        return nativeTrust;
+    }
+
+    /**
+     * Set all the native trust values.
+     *
+     * @param trust The new map of native player to trust.
+     */
+    protected void setNativeTrust(java.util.Map<Player, Integer> trust) {
+        nativeTrust.clear();
+        nativeTrust.putAll(trust);
     }
 
     /**
@@ -3264,6 +3372,10 @@ public class Player extends FreeColGameObject implements Nameable {
                   gt -> gt != spec.getPrimaryFoodType(),
                   gt -> tile.getPotentialProduction(gt, null))
             + 100;
+        // Trading partners sell their land at half price
+        if (getNativeTrustLevel(nationOwner).isAtLeast(TrustLevel.PARTNER)) {
+            price /= 2;
+        }
         return (int)apply(price, getGame().getTurn(), Modifier.LAND_PAYMENT_MODIFIER);
     }
 
@@ -4146,8 +4258,10 @@ public class Player extends FreeColGameObject implements Nameable {
         this.monarch = game.update(o.getMonarch(), false);
         this.highSeas = game.update(o.getHighSeas(), false);
         this.setFoundingFathers(o.getFoundingFathers());
+        this.setDilemmaFathers(o.getDilemmaFathers());
         this.currentFather = o.getCurrentFather();
         this.setTension(o.getTension());
+        this.setNativeTrust(o.getNativeTrust());
         this.setBannedMissions(game.updateRef(o.getBannedMissions()));
         this.setStances(o.getStances());
         this.tradeRoutes.clear();
@@ -4180,6 +4294,7 @@ public class Player extends FreeColGameObject implements Nameable {
     private static final String BAN_MISSIONS_TAG = "banMissions";
     private static final String CURRENT_FATHER_TAG = "currentFather";
     private static final String DEAD_TAG = "dead";
+    private static final String DILEMMA_FATHERS_TAG = "dilemmaFathers";
     private static final String ENTRY_LOCATION_TAG = "entryLocation";
     private static final String FOUNDING_FATHERS_TAG = "foundingFathers";
     private static final String GOLD_TAG = "gold";
@@ -4189,6 +4304,7 @@ public class Player extends FreeColGameObject implements Nameable {
     private static final String INDEPENDENT_NATION_NAME_TAG = "independentNationName";
     private static final String INTERVENTION_BELLS_TAG = "interventionBells";
     private static final String NATION_ID_TAG = "nationId";
+    private static final String NATIVE_TRUST_TAG = "nativeTrust";
     private static final String NATION_TYPE_TAG = "nationType";
     private static final String NEW_LAND_NAME_TAG = "newLandName";
     private static final String OFFERED_FATHERS_TAG = "offeredFathers";
@@ -4299,7 +4415,17 @@ public class Player extends FreeColGameObject implements Nameable {
 
                 xw.writeEndElement();
             }
-            
+
+            for (Player p : sort(nativeTrust.keySet())) {
+                xw.writeStartElement(NATIVE_TRUST_TAG);
+
+                xw.writeAttribute(PLAYER_TAG, p);
+
+                xw.writeAttribute(VALUE_TAG, nativeTrust.get(p));
+
+                xw.writeEndElement();
+            }
+
             if (bannedMissions != null) {
                 for (Player p : sort(bannedMissions)) {
                     xw.writeStartElement(BAN_MISSIONS_TAG);
@@ -4334,6 +4460,10 @@ public class Player extends FreeColGameObject implements Nameable {
             xw.writeToListElement(FOUNDING_FATHERS_TAG, foundingFathers);
 
             xw.writeToListElement(OFFERED_FATHERS_TAG, offeredFathers);
+
+            if (!dilemmaFathers.isEmpty()) {
+                xw.writeToListElement(DILEMMA_FATHERS_TAG, dilemmaFathers);
+            }
 
             if (europe != null) europe.toXML(xw);
 
@@ -4453,10 +4583,12 @@ public class Player extends FreeColGameObject implements Nameable {
     protected void readChildren(FreeColXMLReader xr) throws XMLStreamException {
         // Clear containers.
         tension.clear();
+        nativeTrust.clear();
         if (bannedMissions != null) bannedMissions.clear();
         stance.clear();
         foundingFathers.clear();
         offeredFathers.clear();
+        dilemmaFathers.clear();
         europe = null;
         monarch = null;
         clearHistory();
@@ -4500,7 +4632,16 @@ public class Player extends FreeColGameObject implements Nameable {
                     addFather(ff); // addFather adds the features
                 }
             }
-        
+
+        } else if (DILEMMA_FATHERS_TAG.equals(tag)) {
+            List<FoundingFather> dfs = xr.readList(spec, DILEMMA_FATHERS_TAG,
+                                                   FoundingFather.class);
+            if (dfs != null) {
+                for (FoundingFather ff : dfs) {
+                    acceptDilemma(ff); // acceptDilemma adds the features
+                }
+            }
+
         } else if (OFFERED_FATHERS_TAG.equals(tag)) {
             List<FoundingFather> ofs = xr.readList(spec, OFFERED_FATHERS_TAG,
                                                    FoundingFather.class);
@@ -4518,6 +4659,12 @@ public class Player extends FreeColGameObject implements Nameable {
                                              Player.class, true),
                         new Tension(xr.getAttribute(VALUE_TAG, 0)));
             xr.closeTag(TENSION_TAG);
+
+        } else if (NATIVE_TRUST_TAG.equals(tag)) {
+            nativeTrust.put(xr.makeFreeColObject(game, PLAYER_TAG,
+                                                 Player.class, true),
+                            xr.getAttribute(VALUE_TAG, 0));
+            xr.closeTag(NATIVE_TRUST_TAG);
         
         } else if (Ability.TAG.equals(tag)) {
             Ability ability = new Ability(xr, spec);

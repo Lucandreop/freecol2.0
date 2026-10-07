@@ -112,6 +112,7 @@ import net.sf.freecol.client.gui.panel.report.ReportExplorationPanel;
 import net.sf.freecol.client.gui.panel.report.ReportForeignAffairPanel;
 import net.sf.freecol.client.gui.panel.report.ReportHighScoresPanel;
 import net.sf.freecol.client.gui.panel.report.ReportHistoryPanel;
+import net.sf.freecol.client.gui.panel.report.ReportObjectivesPanel;
 import net.sf.freecol.client.gui.panel.report.ReportIndianPanel;
 import net.sf.freecol.client.gui.panel.report.ReportLabourDetailPanel;
 import net.sf.freecol.client.gui.panel.report.ReportLabourPanel;
@@ -1425,6 +1426,16 @@ public final class Widgets {
             = this.canvas.getExistingFreeColPanel(ReportHistoryPanel.class);
         if (panel == null) {
             panel = new ReportHistoryPanel(this.freeColClient);
+            this.canvas.showFreeColPanel(panel, PopupPosition.CENTERED, true);
+        }
+        return panel;
+    }
+
+    public FreeColPanel showReportObjectivesPanel() {
+        ReportObjectivesPanel panel
+            = this.canvas.getExistingFreeColPanel(ReportObjectivesPanel.class);
+        if (panel == null) {
+            panel = new ReportObjectivesPanel(this.freeColClient);
             this.canvas.showFreeColPanel(panel, PopupPosition.CENTERED, true);
         }
         return panel;

@@ -28,10 +28,12 @@ public class AllTests {
     public static Test suite() {
         TestSuite suite = new TestSuite("Test for net.sf.freecol.server.model");
         //$JUnit-BEGIN$
+        suite.addTestSuite(FatherDilemmaTest.class);
         suite.addTestSuite(ServerBuildingTest.class);
         suite.addTestSuite(ServerColonyTest.class);
         suite.addTestSuite(ServerIndianSettlementTest.class);
         suite.addTestSuite(ServerPlayerTest.class);
+        suite.addTestSuite(NativeTrustTest.class);
         suite.addTestSuite(ServerUnitTest.class);
         //$JUnit-END$
         return suite;

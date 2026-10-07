@@ -37,9 +37,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -51,6 +53,7 @@ import net.sf.freecol.client.FreeColClient;
 import net.sf.freecol.client.gui.ChoiceItem;
 import net.sf.freecol.client.gui.DialogHandler;
 import net.sf.freecol.client.gui.GUI;
+import net.sf.freecol.client.gui.ImageLibrary;
 import net.sf.freecol.client.gui.option.FreeColActionUI;
 import net.sf.freecol.client.gui.panel.FreeColPanel;
 import net.sf.freecol.common.FreeColException;
@@ -176,6 +179,24 @@ public final class InGameController extends FreeColClientHolder {
 
     /** The messages in the last turn report. */
     private final List<ModelMessage> turnReportMessages = new ArrayList<>();
+
+    /**
+     * How close, in tiles, a visible enemy must be to stop a carrier
+     * moving automatically.
+     */
+    private static final int DANGER_RANGE = 2;
+
+    /**
+     * Carriers already stopped by a nearby enemy this turn.  If the
+     * player orders them on anyway, they are not stopped again.
+     */
+    private final Set<Unit> dangerWarnedUnits = new HashSet<>();
+
+    /** The turn number dangerWarnedUnits applies to. */
+    private int dangerWarnedTurn = -1;
+
+    /** The advisor helping the player learn the game. */
+    private final Advisor advisor = new Advisor();
 
 
     /**
@@ -1254,6 +1275,9 @@ public final class InGameController extends FreeColClientHolder {
                         + path.fullPathToString());
                     return false;
                 }
+                if (isRouteInDanger(unit, (Tile)path.getLocation())) {
+                    return false;
+                }
                 if (!moveDirection(unit, path.getDirection(), false)) {
                     // Lack of moves is an expected non-failure condition
                     return unit.getMoveType(path.getDirection())
@@ -1269,6 +1293,73 @@ public final class InGameController extends FreeColClientHolder {
             }
         }
         return true;
+    }
+
+    /**
+     * Should an automatically moving carrier stop before moving to a
+     * tile because a visible enemy is close by?
+     *
+     * Each carrier is stopped at most once a turn, so the player can
+     * order it on anyway.  The player is told why it stopped.
+     *
+     * @param unit The {@code Unit} that is moving.
+     * @param tile The {@code Tile} it is about to move to.
+     * @return True if the unit should stop.
+     */
+    private boolean isRouteInDanger(Unit unit, Tile tile) {
+        if (!unit.isCarrier() || unit.isOffensiveUnit()
+            || (unit.getTradeRoute() == null
+                && unit.getDestination() == null)) return false;
+        final int turn = getGame().getTurn().getNumber();
+        if (turn != this.dangerWarnedTurn) {
+            this.dangerWarnedUnits.clear();
+            this.dangerWarnedTurn = turn;
+        }
+        if (this.dangerWarnedUnits.contains(unit)) return false;
+
+        final Unit threat = findThreatNear(unit, tile, DANGER_RANGE);
+        if (threat == null) return false;
+        this.dangerWarnedUnits.add(unit);
+
+        final Player player = unit.getOwner();
+        ModelMessage m = new ModelMessage(MessageType.WARNING,
+                                          "info.routeInDanger", unit)
+            .addStringTemplate("%unit%",
+                unit.getLabel(Unit.UnitLabelType.NATIONAL))
+            .addStringTemplate("%enemy%",
+                threat.getLabel(Unit.UnitLabelType.NATIONAL))
+            .addStringTemplate("%location%", tile.getLocationLabelFor(player));
+        player.addModelMessage(m);
+        turnReportMessages.add(m);
+        return true;
+    }
+
+    /**
+     * Find a visible enemy unit that could attack a unit near a tile.
+     *
+     * Threats are offensive units of the same kind (naval or land)
+     * belonging to a player at war with the unit owner, and
+     * privateers, which attack anyone.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param unit The {@code Unit} that might be attacked.
+     * @param tile The {@code Tile} to look around.
+     * @param range The distance in tiles to look at.
+     * @return The threatening {@code Unit}, or null if none is seen.
+     */
+    static Unit findThreatNear(Unit unit, Tile tile, int range) {
+        final Player player = unit.getOwner();
+        for (Tile t : tile.getSurroundingTiles(0, range)) {
+            if (!player.canSee(t)) continue;
+            for (Unit u : t.getUnitList()) {
+                if (player.owns(u) || !u.isOffensiveUnit()
+                    || u.isNaval() != unit.isNaval()) continue;
+                if (u.hasAbility(Ability.PIRACY)
+                    || player.atWarWith(u.getOwner())) return u;
+            }
+        }
+        return null;
     }
 
     /**
@@ -3973,6 +4064,47 @@ public final class InGameController extends FreeColClientHolder {
     }
 
     /**
+     * Ask the player whether to accept the bold proposal of a founding
+     * father who has just joined the congress.
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     */
+    public void fatherDilemmaHandler(FoundingFather father) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma == null) return;
+        final StringTemplate template = StringTemplate
+            .template("model.foundingFather.dilemma.offer")
+            .addNamed("%foundingFather%", father)
+            .add("%proposal%", father.getId() + ".dilemma")
+            .addStringTemplate("%cost%", StringTemplate
+                .template(dilemma.getCost().getKey())
+                .addAmount("%amount%", dilemma.getAmount()));
+        invokeLater(() -> {
+            final ImageLibrary lib = getGUI().getFixedImageLibrary();
+            final javax.swing.ImageIcon icon = (lib == null) ? null
+                : new javax.swing.ImageIcon(lib.getFoundingFatherImage(father,
+                                                                       false));
+            boolean accept = getGUI().modalConfirmDialog(null, template, icon,
+                "model.foundingFather.dilemma.accept",
+                "model.foundingFather.dilemma.decline", false);
+            if (askServer().answerFatherDilemma(father, accept) && accept) {
+                updateGUI(null, false);
+            }
+        });
+    }
+
+    /**
+     * Let the advisor add its tips, objectives and warnings to the
+     * player's messages.  Called at the start of each turn, and when a
+     * game starts or is loaded.
+     *
+     * @param player The {@code Player} to advise.
+     */
+    public void advise(Player player) {
+        advisor.startTurn(getClientOptions(), player);
+    }
+
+    /**
      * Moves the specified unit somewhere that requires crossing the
      * high seas.
      *
@@ -4977,6 +5109,9 @@ public final class InGameController extends FreeColClientHolder {
             // Save the game (if it isn't newly loaded)
             if (getFreeColServer() != null
                 && game.getTurn().getNumber() > 0) autoSaveGame();
+
+            // Let the advisor add its tips and warnings to the report.
+            advise(player);
 
             // Get turn report out quickly before more message display occurs.
             player.removeDisplayedModelMessages();
