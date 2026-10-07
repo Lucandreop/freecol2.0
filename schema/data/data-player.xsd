@@ -118,6 +118,18 @@
           </xs:complexType>
         </xs:element>
 
+        <xs:element name="nativeTrust">
+          <xs:annotation>
+            <xs:documentation>
+              The trust a native nation has in this player, 0 to 100.
+            </xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:attribute name="player" type="xs:string" use="required"/>
+            <xs:attribute name="value" type="xs:int" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
         <xs:element ref="tradeRoute"/>
 
         <xs:element ref="ability" />
