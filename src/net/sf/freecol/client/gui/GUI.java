@@ -2381,6 +2381,13 @@ public class GUI extends FreeColClientHolder {
     public FreeColPanel showReportHistoryPanel() { return null; }
 
     /**
+     * Show the Objectives Report.
+     *
+     * @return The panel shown.
+     */
+    public FreeColPanel showReportObjectivesPanel() { return null; }
+
+    /**
      * Show the Native Affairs Report.
      *
      * @return The panel shown.

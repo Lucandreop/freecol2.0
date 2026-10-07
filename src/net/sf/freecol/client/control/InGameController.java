@@ -177,6 +177,9 @@ public final class InGameController extends FreeColClientHolder {
     /** The messages in the last turn report. */
     private final List<ModelMessage> turnReportMessages = new ArrayList<>();
 
+    /** The advisor helping the player learn the game. */
+    private final Advisor advisor = new Advisor();
+
 
     /**
      * The constructor to use.
@@ -3973,6 +3976,17 @@ public final class InGameController extends FreeColClientHolder {
     }
 
     /**
+     * Let the advisor add its tips, objectives and warnings to the
+     * player's messages.  Called at the start of each turn, and when a
+     * game starts or is loaded.
+     *
+     * @param player The {@code Player} to advise.
+     */
+    public void advise(Player player) {
+        advisor.startTurn(getClientOptions(), player);
+    }
+
+    /**
      * Moves the specified unit somewhere that requires crossing the
      * high seas.
      *
@@ -4977,6 +4991,9 @@ public final class InGameController extends FreeColClientHolder {
             // Save the game (if it isn't newly loaded)
             if (getFreeColServer() != null
                 && game.getTurn().getNumber() > 0) autoSaveGame();
+
+            // Let the advisor add its tips and warnings to the report.
+            advise(player);
 
             // Get turn report out quickly before more message display occurs.
             player.removeDisplayedModelMessages();

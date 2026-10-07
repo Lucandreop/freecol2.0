@@ -149,6 +149,20 @@ public class RebelToolTip extends JToolTip {
             content.add(Utility.localizedLabel("rebelToolTip.changeLess"));
             content.add(new JLabel(String.valueOf(-grow)), "skip");
         }
+
+        // Explain what the numbers mean, with the limits of this game
+        content.add(Utility.localizedTextArea(StringTemplate
+                .template("rebelToolTip.explanation")
+                .addAmount("%good%",
+                    spec.getInteger(GameOptions.GOOD_GOVERNMENT_LIMIT))
+                .addAmount("%veryGood%",
+                    spec.getInteger(GameOptions.VERY_GOOD_GOVERNMENT_LIMIT))
+                .addAmount("%bad%",
+                    spec.getInteger(GameOptions.BAD_GOVERNMENT_LIMIT))
+                .addAmount("%veryBad%",
+                    spec.getInteger(GameOptions.VERY_BAD_GOVERNMENT_LIMIT)),
+                40), "span 3, growx, gaptop 10");
+
         setPreferredSize(content.getPreferredSize());   
         add(content, BorderLayout.CENTER);
     }

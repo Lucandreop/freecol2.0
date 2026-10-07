@@ -322,6 +322,7 @@ public final class PreGameController extends FreeColClientHolder {
         if (getGame().getTurn().getNumber() == 1) {
             player.addStartGameMessage();
         }
+        igc().advise(player);
         igc().nextModelMessage();
         return true;
     }

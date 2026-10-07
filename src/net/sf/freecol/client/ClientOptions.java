@@ -229,6 +229,18 @@ public class ClientOptions extends OptionGroup {
     /** Whether to display borders by default or not. */
     public static final String DISPLAY_BORDERS
         = "model.option.displayBorders";
+
+    /** Whether to show the advisor tips and objectives. */
+    public static final String GUI_SHOW_TUTORIAL
+        = "model.option.guiShowTutorial";
+
+    /** Whether to show the advisor warnings. */
+    public static final String GUI_SHOW_ADVISOR
+        = "model.option.guiShowAdvisor";
+
+    /** The advisor tips already shown, comma separated (hidden). */
+    public static final String TUTORIAL_TIPS_SEEN
+        = "model.option.tutorialTipsSeen";
     
     /** Whether to draw the fog of war on the actual map or not. */
     public static final String DISPLAY_FOG_OF_WAR
