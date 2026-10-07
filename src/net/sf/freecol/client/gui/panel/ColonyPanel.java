@@ -686,9 +686,7 @@ public final class ColonyPanel extends PortPanel
         }
         
         if (fullscreen) {
-            if (colonyTitleImage == null) {
-                colonyTitleImage = getImageLibrary().createColonyTitleImage(((Graphics2D) g), colony.getName(), getColony().getOwner(), false);
-            }
+            final BufferedImage colonyTitleImage = getFullscreenTitleImage();
             final int x = upperRightPanel.getX() + (upperRightPanel.getWidth() - colonyTitleImage.getWidth()) / 2;
             final int y = inPortScroll.getY() - colonyTitleImage.getHeight();
             
@@ -696,6 +694,26 @@ public final class ColonyPanel extends PortPanel
         }
     }
     
+    /**
+     * Get the banner with the colony name shown in full screen, creating
+     * it if needed.  It is needed before painting, to lay out room for it.
+     *
+     * @return The banner image.
+     */
+    private BufferedImage getFullscreenTitleImage() {
+        if (colonyTitleImage == null) {
+            final Graphics2D g = ImageUtils.createBufferedImage(1, 1)
+                .createGraphics();
+            try {
+                colonyTitleImage = getImageLibrary().createColonyTitleImage(g,
+                    getColony().getName(), getColony().getOwner(), false);
+            } finally {
+                g.dispose();
+            }
+        }
+        return colonyTitleImage;
+    }
+
     private void paintOutsideColonyBackground(Graphics2D g2d, BuildingType buildingType) {
         final Dimension outsideColonySize = outsideColonyScroll.getSize();
         BufferedImage outsideColonyImage = cachedDefensiveBuildingImage.get(buildingType);
@@ -856,7 +874,13 @@ public final class ColonyPanel extends PortPanel
         upperRightPanel.add(constructionPanel, "grow, top, wmax 367, height 90");
         add(upperRightPanel, "span 1 3, growy, gapbefore 53, width 400!, wmax 400");
         
-        add(inPortScroll, "span, grow, height 96!, gaptop push");
+        // In full screen the colony name is drawn on a banner just above
+        // the in-port panel, so always leave room for it there, or the
+        // construction panel covers it when the screen is short.
+        final int titleGap = (fullscreen)
+            ? getFullscreenTitleImage().getHeight() : 0;
+        add(inPortScroll, "span, grow, height 96!, gaptop " + titleGap
+            + ":push");
         add(outsideColonyScroll, "grow, height 96!");
         add(cargoScroll, "grow, height 100!");
         add(warehouseScroll, "span, split, height 48:, grow, gap 0 0 0 0, sgy bottomRow");
