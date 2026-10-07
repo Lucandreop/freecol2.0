@@ -214,6 +214,9 @@
                        defaultValue="true"/>
         <booleanOption id="model.option.guiShowTutorial"
                        defaultValue="true"/>
+        <!-- Show the advisor warnings about serious problems. -->
+        <booleanOption id="model.option.guiShowAdvisor"
+                       defaultValue="true"/>
         <booleanOption id="model.option.guiShowUnitAdded"
                        defaultValue="true"/>
         <booleanOption id="model.option.guiShowUnitArrived"
@@ -395,5 +398,7 @@
 
     <optionGroup id="clientOptions.etc" editable="false" visible="false">
       <!-- Placement options, set dynamically, not from the options dialogs. -->
+      <!-- The advisor tips already shown. -->
+      <textOption id="model.option.tutorialTipsSeen" defaultValue=""/>
     </optionGroup>
 </optionGroup>
