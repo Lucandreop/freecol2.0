@@ -55,6 +55,7 @@ import net.sf.freecol.common.model.Settlement;
 import net.sf.freecol.common.model.Specification;
 import net.sf.freecol.common.model.Tension;
 import net.sf.freecol.common.model.Tile;
+import net.sf.freecol.common.model.TrustLevel;
 import net.sf.freecol.common.model.Turn;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.model.Role;
@@ -91,6 +92,9 @@ public final class NativeAIPlayer extends MissionAIPlayer {
     public static final int MAX_DISTANCE_TO_MAKE_DEMANDS = 5;
 
     public static final int MAX_NUMBER_OF_DEMANDS = 1;
+
+    /** How much better prices trading partners get, in percent. */
+    public static final int PARTNER_PRICE_PERCENT = 15;
 
     /**
      * Debug helper to keep track of why/what the units are doing.
@@ -620,6 +624,9 @@ public final class NativeAIPlayer extends MissionAIPlayer {
                 PathNode path;
                 if (c == null
                     || !is.hasContacted(c.getOwner())
+                    // Allies are not asked for tribute
+                    || c.getOwner().getNativeTrustLevel(getPlayer())
+                        .isAtLeast(TrustLevel.ALLY)
                     || IndianDemandMission.invalidMissionReason(aiUnit, c) != null
                     || (path = unit.findPath(home, c.getTile(),
                                              null, cd, null)) == null) continue;
@@ -794,6 +801,9 @@ public final class NativeAIPlayer extends MissionAIPlayer {
         final Turn turn = getGame().getTurn();
         final IndianSettlement is = nt.getIndianSettlement();
         final Unit unit = nt.getUnit();
+        // Trading partners get better prices both ways
+        final boolean partner = unit.getOwner()
+            .getNativeTrustLevel(getPlayer()).isAtLeast(TrustLevel.PARTNER);
         Set<Modifier> modifiers = new HashSet<>();
 
         if (is.hasMissionary(unit.getOwner())
@@ -810,6 +820,7 @@ public final class NativeAIPlayer extends MissionAIPlayer {
             for (int h = nti.getHaggleCount(); h >= 0; h--) {
                 price = NativeTrade.haggleUp(price);
             }
+            if (partner) price = price * (100 + PARTNER_PRICE_PERCENT) / 100;
             if (price <= NativeTradeItem.PRICE_UNSET) {
                 price = NativeTradeItem.PRICE_INVALID;
             }
@@ -831,6 +842,7 @@ public final class NativeAIPlayer extends MissionAIPlayer {
             for (int h = nti.getHaggleCount(); h >= 0; h--) {
                 price = NativeTrade.haggleDown(price);
             }
+            if (partner) price = price * (100 - PARTNER_PRICE_PERCENT) / 100;
             if (price <= NativeTradeItem.PRICE_UNSET) {
                 price = NativeTradeItem.PRICE_INVALID;
             }

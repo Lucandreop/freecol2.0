@@ -276,6 +276,13 @@ public class Player extends FreeColGameObject implements Nameable {
     protected final List<FoundingFather> offeredFathers = new ArrayList<>();
 
     /**
+     * The trust native nations have in this (European) player, from 0
+     * to TrustLevel.MAXIMUM.  Absent means no trust.
+     */
+    protected final java.util.Map<Player, Integer> nativeTrust
+        = new HashMap<>();
+
+    /**
      * The tension levels, 0-1000, with 1000 being maximum hostility.
      *
      * Only used by AI, but resist the temptation to move it to AIPlayer, the
@@ -1470,6 +1477,61 @@ public class Player extends FreeColGameObject implements Nameable {
         foundingFathers.add(father);
         addFeatures(father);
         for (Colony c : getColonyList()) c.invalidateCache();
+    }
+
+    /**
+     * Get the trust a native nation has in this player.
+     *
+     * @param natives The native {@code Player}.
+     * @return The trust, from 0 to TrustLevel.MAXIMUM.
+     */
+    public int getNativeTrust(Player natives) {
+        Integer value = nativeTrust.get(natives);
+        return (value == null) ? 0 : value;
+    }
+
+    /**
+     * Set the trust a native nation has in this player.
+     *
+     * @param natives The native {@code Player}.
+     * @param value The new trust, clamped to 0..TrustLevel.MAXIMUM.
+     */
+    public void setNativeTrust(Player natives, int value) {
+        value = Math.max(0, Math.min(TrustLevel.MAXIMUM, value));
+        if (value == 0) {
+            nativeTrust.remove(natives);
+        } else {
+            nativeTrust.put(natives, value);
+        }
+    }
+
+    /**
+     * Get the level of trust a native nation has in this player.
+     *
+     * @param natives The native {@code Player}.
+     * @return The {@code TrustLevel}.
+     */
+    public TrustLevel getNativeTrustLevel(Player natives) {
+        return TrustLevel.fromValue(getNativeTrust(natives));
+    }
+
+    /**
+     * Get all the native trust values.
+     *
+     * @return A map of native player to trust.
+     */
+    protected java.util.Map<Player, Integer> getNativeTrust() {
+        return nativeTrust;
+    }
+
+    /**
+     * Set all the native trust values.
+     *
+     * @param trust The new map of native player to trust.
+     */
+    protected void setNativeTrust(java.util.Map<Player, Integer> trust) {
+        nativeTrust.clear();
+        nativeTrust.putAll(trust);
     }
 
     /**
@@ -3264,6 +3326,10 @@ public class Player extends FreeColGameObject implements Nameable {
                   gt -> gt != spec.getPrimaryFoodType(),
                   gt -> tile.getPotentialProduction(gt, null))
             + 100;
+        // Trading partners sell their land at half price
+        if (getNativeTrustLevel(nationOwner).isAtLeast(TrustLevel.PARTNER)) {
+            price /= 2;
+        }
         return (int)apply(price, getGame().getTurn(), Modifier.LAND_PAYMENT_MODIFIER);
     }
 
@@ -4148,6 +4214,7 @@ public class Player extends FreeColGameObject implements Nameable {
         this.setFoundingFathers(o.getFoundingFathers());
         this.currentFather = o.getCurrentFather();
         this.setTension(o.getTension());
+        this.setNativeTrust(o.getNativeTrust());
         this.setBannedMissions(game.updateRef(o.getBannedMissions()));
         this.setStances(o.getStances());
         this.tradeRoutes.clear();
@@ -4189,6 +4256,7 @@ public class Player extends FreeColGameObject implements Nameable {
     private static final String INDEPENDENT_NATION_NAME_TAG = "independentNationName";
     private static final String INTERVENTION_BELLS_TAG = "interventionBells";
     private static final String NATION_ID_TAG = "nationId";
+    private static final String NATIVE_TRUST_TAG = "nativeTrust";
     private static final String NATION_TYPE_TAG = "nationType";
     private static final String NEW_LAND_NAME_TAG = "newLandName";
     private static final String OFFERED_FATHERS_TAG = "offeredFathers";
@@ -4299,7 +4367,17 @@ public class Player extends FreeColGameObject implements Nameable {
 
                 xw.writeEndElement();
             }
-            
+
+            for (Player p : sort(nativeTrust.keySet())) {
+                xw.writeStartElement(NATIVE_TRUST_TAG);
+
+                xw.writeAttribute(PLAYER_TAG, p);
+
+                xw.writeAttribute(VALUE_TAG, nativeTrust.get(p));
+
+                xw.writeEndElement();
+            }
+
             if (bannedMissions != null) {
                 for (Player p : sort(bannedMissions)) {
                     xw.writeStartElement(BAN_MISSIONS_TAG);
@@ -4453,6 +4531,7 @@ public class Player extends FreeColGameObject implements Nameable {
     protected void readChildren(FreeColXMLReader xr) throws XMLStreamException {
         // Clear containers.
         tension.clear();
+        nativeTrust.clear();
         if (bannedMissions != null) bannedMissions.clear();
         stance.clear();
         foundingFathers.clear();
@@ -4518,6 +4597,12 @@ public class Player extends FreeColGameObject implements Nameable {
                                              Player.class, true),
                         new Tension(xr.getAttribute(VALUE_TAG, 0)));
             xr.closeTag(TENSION_TAG);
+
+        } else if (NATIVE_TRUST_TAG.equals(tag)) {
+            nativeTrust.put(xr.makeFreeColObject(game, PLAYER_TAG,
+                                                 Player.class, true),
+                            xr.getAttribute(VALUE_TAG, 0));
+            xr.closeTag(NATIVE_TRUST_TAG);
         
         } else if (Ability.TAG.equals(tag)) {
             Ability ability = new Ability(xr, spec);

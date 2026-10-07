@@ -43,6 +43,7 @@ import net.sf.freecol.common.model.NationSummary;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Tile;
+import net.sf.freecol.common.model.TrustLevel;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.model.UnitType;
 import net.sf.freecol.common.resources.ResourceManager;
@@ -127,7 +128,18 @@ public final class ReportIndianPanel extends ReportPanel {
                 .template("report.indian.tensionStance")
                 .addNamed("%tension%", opponent.getTension(player))
                 .addNamed("%stance%", opponent.getStance(player))),
-            "left, wrap 20");
+            "left, wrap");
+        label = Utility.localizedLabel("report.indian.trust");
+        reportPanel.add(label);
+        label.setFont(font);
+        final TrustLevel trustLevel = player.getNativeTrustLevel(opponent);
+        reportPanel.add(Utility.localizedLabel(StringTemplate
+                .template("report.indian.trustValue")
+                .addAmount("%trust%", player.getNativeTrust(opponent))
+                .add("%level%", trustLevel.getKey() + ".name")),
+            "left, wrap");
+        reportPanel.add(Utility.localizedTextArea(trustLevel.getKey()
+                + ".description", 50), "span, left, wrap 20");
 
         if (nativeSettlements.isEmpty()) {
             reportPanel.add(Utility
