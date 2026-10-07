@@ -563,6 +563,15 @@ public final class ColonyPanel extends PortPanel
             final int y = docksBottomLeftY - docks.getHeight();
             g.drawImage(docks, docksBottomLeftX, y, null);
         }
+        if (inPortPanel.getComponentCount() == 0) {
+            // Say what the empty water is for
+            final Graphics2D hint = (Graphics2D)g.create(inPortScroll.getX(),
+                inPortScroll.getY(), inPortScroll.getWidth(),
+                inPortScroll.getHeight());
+            CargoPanel.paintHint(hint, Messages.message("colonyPanel.port.empty"),
+                                 inPortScroll.getSize());
+            hint.dispose();
+        }
         
         final List<Building> defensiveBuildings = colony.getBuildings()
                 .stream()
@@ -651,6 +660,25 @@ public final class ColonyPanel extends PortPanel
                 );
             
             
+            // Name each number on a plate under its octagon
+            final Font plateFont = FontLibrary.getScaledFont("simple-bold-tiny");
+            final int plateWidth = getImageLibrary().scaleInt(84);
+            final int plateHeight = getImageLibrary().scaleInt(17);
+            final int upperPlateY = y + getImageLibrary().scaleInt(64);
+            final int lowerPlateY = y + getImageLibrary().scaleInt(210);
+            TownPainter.paintSign(g2d, plateFont, x + colonySizeX, upperPlateY,
+                plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.colonists"), null, null);
+            TownPainter.paintSign(g2d, plateFont, x + colonyBonusX, upperPlateY,
+                plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.room"), null, null);
+            TownPainter.paintSign(g2d, plateFont, x + rebelPercentageX,
+                lowerPlateY, plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.rebels"), null, null);
+            TownPainter.paintSign(g2d, plateFont, x + royalistPercentageX,
+                lowerPlateY, plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.royalists"), null, null);
+
             g.setFont(origFont);
         }
         
@@ -1500,22 +1528,81 @@ public final class ColonyPanel extends PortPanel
     }
 
     private void updateNetProductionPanel() {
-        final FreeColClient freeColClient = getFreeColClient();
         final Colony colony = getColony();
         final Specification spec = colony.getSpecification();
         // FIXME: find out why the cache needs to be explicitly invalidated
         colony.invalidateCache();
 
         netProductionPanel.removeAll();
+        // Food first, with what it means for the colony
+        final GoodsType food = spec.getPrimaryFoodType();
+        netProductionPanel.add(makeNetProductionLabel(food,
+                colony.getAdjustedNetProductionOf(food),
+                getFoodStatus(colony)));
         for (GoodsType goodsType : spec.getGoodsTypeList()) {
+            if (goodsType.isFoodType()) continue;
             int amount = colony.getAdjustedNetProductionOf(goodsType);
             if (amount != 0) {
-                AbstractGoods ag = new AbstractGoods(goodsType, amount);
-                netProductionPanel.add(new ProductionLabel(freeColClient, ag));
+                netProductionPanel.add(makeNetProductionLabel(goodsType,
+                        amount, null));
             }
         }
         netProductionPanel.revalidate();
         netProductionPanel.repaint();
+    }
+
+    /**
+     * Make a label for the net production of some goods: its picture
+     * and the amount, with an optional remark.
+     *
+     * @param type The {@code GoodsType} produced.
+     * @param amount The net amount produced each turn.
+     * @param remark A remark on the amount, or null.
+     * @return The label.
+     */
+    private JLabel makeNetProductionLabel(GoodsType type, int amount,
+                                          StringTemplate remark) {
+        final String number = (amount > 0) ? "+" + amount
+            : String.valueOf(amount);
+        final JLabel label = new JLabel((remark == null) ? number
+            : Messages.message(StringTemplate.template("colonyPanel.netRemark")
+                .addName("%amount%", number)
+                .addStringTemplate("%remark%", remark)),
+            new ImageIcon(getImageLibrary().getSmallGoodsTypeImage(type)),
+            JLabel.LEFT);
+        label.setFont(FontLibrary.getScaledFont("simple-bold-small"));
+        label.setForeground((amount > 0) ? new Color(214, 240, 170)
+            : (amount < 0) ? new Color(255, 160, 140)
+            : new Color(240, 225, 190));
+        label.setToolTipText(Messages.message(StringTemplate
+                .template("colonyPanel.netTip")
+                .addName("%amount%", number)
+                .addNamed("%goods%", type)));
+        return label;
+    }
+
+    /**
+     * Say what the food production means for a colony: when a new
+     * colonist will be born, or when it will starve.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param colony The {@code Colony} to check.
+     * @return A template describing the food situation.
+     */
+    static StringTemplate getFoodStatus(Colony colony) {
+        final int starve = colony.getStarvationTurns();
+        if (starve == 0) {
+            return StringTemplate.key("colonyPanel.food.starving");
+        } else if (starve > 0) {
+            return StringTemplate.template("colonyPanel.food.starve")
+                .addAmount("%number%", starve);
+        }
+        final int grow = colony.getNewColonistTurns();
+        return (grow > 0)
+            ? StringTemplate.template("colonyPanel.food.grow")
+                .addAmount("%number%", grow)
+            : StringTemplate.key("colonyPanel.food.still");
     }
 
     private void updateOutsideColonyPanel() {

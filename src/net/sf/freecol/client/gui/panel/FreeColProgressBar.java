@@ -201,26 +201,20 @@ public class FreeColProgressBar extends JPanel {
             }
         }
 
-        String stepSignal = (step < 0) ? "-" : "+";
-        StringBuilder progress = new StringBuilder(32);
-        progress.append(String.valueOf(value)).append(stepSignal)
-            .append(Math.abs(step)).append('/').append(max);
-        String turnsString;
-        if (max <= value) { // Already complete
-            turnsString = "0";
-        } else if (step > 0) { // There is progress, how many turns to go?
-            int turns = (max - value) / step;
-            if (((max - value) % step) > 0) {
-                turns++;
-            }
-            turnsString = Integer.toString(turns);
-        } else { // No progress
-            turnsString = Messages.message("notApplicable");
-        }
-        StringTemplate t = StringTemplate
-            .template("freeColProgressBar.turnsToComplete")
-            .addName("%number%", turnsString);
-        progress.append(' ').append(Messages.message(t));
+        // Say plainly how far along it is, how fast it goes, and when
+        // it will be done
+        final StringTemplate turns = (max <= value)
+            ? StringTemplate.key("freeColProgressBar.done")
+            : (step > 0)
+            ? StringTemplate.template("freeColProgressBar.turns")
+                .addAmount("%number%", (max - value + step - 1) / step)
+            : StringTemplate.key("freeColProgressBar.stalled");
+        final String progress = Messages.message(StringTemplate
+            .template("freeColProgressBar.progress")
+            .addAmount("%value%", value)
+            .addAmount("%max%", max)
+            .addName("%step%", ((step < 0) ? "-" : "+") + Math.abs(step))
+            .addStringTemplate("%turns%", turns));
 
         int stringWidth = g2d.getFontMetrics().stringWidth(progress.toString());
         int stringHeight = g2d.getFontMetrics().getAscent()
