@@ -33,14 +33,18 @@ import java.util.Random;
 import javax.swing.JViewport;
 
 import net.sf.freecol.client.gui.panel.ColonyPanel.BuildingsPanel;
+import net.sf.freecol.client.gui.panel.ColonyPanel.BuildingsPanel.ASingleBuildingPanel;
 import net.sf.freecol.client.gui.panel.ColonyPanel.BuildingsPanel.EmptyBuildingSite;
+import net.sf.freecol.common.model.BuildingType;
 
 /**
  * A specific layout manager for {@code BuildingsPanel}.
  * 
- * This layout manager tries to lay out all the buildings in a randomized
- * pattern using the preferred size of the building (that is, the maximum
- * required size of the building for all levels).
+ * This layout manager first tries to lay the buildings out as a town,
+ * along streets (see {@link TownPlan}).  If they do not fit, it tries
+ * to lay them out in a randomized pattern using the preferred size of
+ * the building (that is, the maximum required size of the building for
+ * all levels).
  * 
  * A {@link WrapLayout} with the minimum building size is used as a
  * fallback if this layout manager fails to layout all the buildings
@@ -68,6 +72,15 @@ public class BuildingsLayoutManager implements LayoutManager {
      * as for the colony name banner.
      */
     private Dimension reservedTop = null;
+
+    /** The least width of the town streets, zero for no town layout. */
+    private int minRoad = 0;
+
+    /** The greatest width of the town streets. */
+    private int maxRoad = 0;
+
+    /** The town plan in use, or null if the buildings are scattered. */
+    private TownPlan plan = null;
     
     
     /**
@@ -98,6 +111,56 @@ public class BuildingsLayoutManager implements LayoutManager {
     }
 
     /**
+     * Set the widths of the town streets, enabling the town layout.
+     *
+     * @param minRoad The least width of a street, zero to disable.
+     * @param maxRoad The greatest width of a street.
+     */
+    public void setRoadWidths(int minRoad, int maxRoad) {
+        this.minRoad = minRoad;
+        this.maxRoad = maxRoad;
+    }
+
+    /**
+     * Get the town plan the buildings were laid out by.
+     *
+     * @return The {@code TownPlan}, or null if the buildings were not
+     *     laid out as a town.
+     */
+    public TownPlan getPlan() {
+        return this.plan;
+    }
+
+    /**
+     * Try to lay the buildings out as a town.
+     *
+     * @param parent The container of the buildings.
+     * @param size The size to lay the town out in.
+     * @return The {@code TownPlan}, or null if the buildings do not fit.
+     */
+    private TownPlan townPlacement(Container parent, Dimension size) {
+        if (minRoad <= 0) return null;
+        final List<TownPlan.Plot> plots = new ArrayList<>();
+        int index = 0;
+        for (Component c : parent.getComponents()) {
+            final BuildingType type;
+            final boolean empty;
+            if (c instanceof ASingleBuildingPanel) {
+                type = ((ASingleBuildingPanel)c).getBuilding().getType();
+                empty = false;
+            } else if (c instanceof EmptyBuildingSite) {
+                type = ((EmptyBuildingSite)c).getBuildingType();
+                empty = true;
+            } else {
+                return null;
+            }
+            plots.add(new TownPlan.Plot(c, type, c.getMinimumSize(), empty,
+                                        index++));
+        }
+        return TownPlan.create(size, reservedTop, plots, minRoad, maxRoad);
+    }
+
+    /**
      * Get the area at the top center kept free of buildings.
      *
      * @param size The size of the container.
@@ -122,6 +185,9 @@ public class BuildingsLayoutManager implements LayoutManager {
     public Dimension preferredLayoutSize(Container parent) {
         final Dimension size = determineInitialSize(parent);
 
+        if (townPlacement(parent, size) != null) {
+            return size;
+        }
         if (randomizedPlacement(parent, size, true)) {
             // Randomized placement succeeded.
             return size;
@@ -166,8 +232,17 @@ public class BuildingsLayoutManager implements LayoutManager {
                 }
             }
             
+            this.plan = null;
             if (!skipRandomizedPlacement) {
                 setAllEmptyBuildingSiteVisibility(parent, true);
+                final TownPlan townPlan = townPlacement(parent, size);
+                if (townPlan != null) {
+                    for (TownPlan.Plot p : townPlan.getPlots()) {
+                        p.component.setBounds(p.bounds);
+                    }
+                    this.plan = townPlan;
+                    return;
+                }
                 if (randomizedPlacement(parent, size, false)) {
                     return;
                 }

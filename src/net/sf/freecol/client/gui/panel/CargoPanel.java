@@ -22,7 +22,10 @@ package net.sf.freecol.client.gui.panel;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
+import java.awt.Graphics2D;
 import java.awt.Graphics;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
@@ -32,9 +35,11 @@ import javax.swing.JLabel;
 
 import net.miginfocom.swing.MigLayout;
 import net.sf.freecol.client.FreeColClient;
+import net.sf.freecol.client.gui.FontLibrary;
 import net.sf.freecol.client.gui.label.CargoLabel;
 import net.sf.freecol.client.gui.label.GoodsLabel;
 import net.sf.freecol.client.gui.label.UnitLabel;
+import net.sf.freecol.common.i18n.Messages;
 import net.sf.freecol.common.model.Goods;
 import net.sf.freecol.common.model.GoodsType;
 import net.sf.freecol.common.model.StringTemplate;
@@ -263,6 +268,35 @@ public class CargoPanel extends FreeColPanel
         defaultTransferHandler = null;
     }
     
+    /**
+     * Paint a hint in the middle of an empty panel.
+     *
+     * @param g The {@code Graphics} to paint with.
+     * @param text The hint.
+     * @param size The size of the panel.
+     * @param where How far down the panel to put the hint, from 0 at
+     *     the top to 1 at the bottom.
+     */
+    static void paintHint(Graphics g, String text, Dimension size,
+                          float where) {
+        final Graphics2D g2d = (Graphics2D)g.create();
+        try {
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                 RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g2d.setFont(FontLibrary.getScaledFont("simple-bold-small"));
+            final FontMetrics fm = g2d.getFontMetrics();
+            final int x = (size.width - fm.stringWidth(text)) / 2;
+            final int y = Math.round(size.height * where)
+                + (fm.getAscent() - fm.getDescent()) / 2;
+            g2d.setColor(new Color(0, 0, 0, 150));
+            g2d.drawString(text, x + 1, y + 1);
+            g2d.setColor(new Color(250, 236, 205, 220));
+            g2d.drawString(text, x, y);
+        } finally {
+            g2d.dispose();
+        }
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -287,6 +321,8 @@ public class CargoPanel extends FreeColPanel
                 x += unavailable.getWidth();
             }
             g.drawImage(unavailable, x, 0, null);
+            // Say what this empty space is for
+            paintHint(g, Messages.message("cargoPanel.empty"), size, 0.5f);
             return;
         }
         

@@ -20,6 +20,8 @@
 package net.sf.freecol.client.gui.panel;
 
 import static net.sf.freecol.common.util.CollectionUtils.dump;
+import static net.sf.freecol.common.util.CollectionUtils.first;
+import static net.sf.freecol.common.util.CollectionUtils.iterable;
 import static net.sf.freecol.common.util.CollectionUtils.sort;
 import static net.sf.freecol.common.util.CollectionUtils.transform;
 
@@ -111,12 +113,15 @@ import net.sf.freecol.common.model.Goods;
 import net.sf.freecol.common.model.GoodsType;
 import net.sf.freecol.common.model.ModelMessage;
 import net.sf.freecol.common.model.Nation;
+import net.sf.freecol.common.model.Occupation;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.Player.NoClaimReason;
 import net.sf.freecol.common.model.ProductionInfo;
+import net.sf.freecol.common.model.ProductionType;
 import net.sf.freecol.common.model.Specification;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Tile;
+import net.sf.freecol.common.model.TileType;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.model.UnitLocation.NoAddReason;
 import net.sf.freecol.common.model.UnitType;
@@ -206,8 +211,18 @@ public final class ColonyPanel extends PortPanel
 
     /** Space around the colony name banner at the top of the town. */
     private static final int BANNER_MARGIN = 6;
+
+    /** The unscaled size of the land texture under the town. */
+    private static final Dimension TOWN_LAND_SIZE = new Dimension(256, 128);
     
     private boolean fullscreen = false;
+
+    /** A picture of the land outside the town, and what it shows. */
+    private BufferedImage outskirtsImage = null;
+    private String outskirtsKey = null;
+
+    /** The colonist being dragged, whose possible work is previewed. */
+    private Unit previewUnit = null;
 
     // The action commands
 
@@ -552,6 +567,16 @@ public final class ColonyPanel extends PortPanel
             final int y = docksBottomLeftY - docks.getHeight();
             g.drawImage(docks, docksBottomLeftX, y, null);
         }
+        if (inPortPanel.getComponentCount() == 0) {
+            // Say what the empty water is for
+            final Graphics2D hint = (Graphics2D)g.create(inPortScroll.getX(),
+                inPortScroll.getY(), inPortScroll.getWidth(),
+                inPortScroll.getHeight());
+            // Low down, on the water, clear of the frame above
+            CargoPanel.paintHint(hint, Messages.message("colonyPanel.port.empty"),
+                                 inPortScroll.getSize(), 0.8f);
+            hint.dispose();
+        }
         
         final List<Building> defensiveBuildings = colony.getBuildings()
                 .stream()
@@ -559,12 +584,26 @@ public final class ColonyPanel extends PortPanel
                 .sorted(Comparator.comparing(Building::getId)) // Stable sort. Might add a z-index property later.
                 .collect(Collectors.toList());
         
-        if (defensiveBuildings.isEmpty()) {
+        // When the buildings stand in a town, the land outside it is
+        // part of the town too
+        final TownPlan townPlan = buildingsPanel.getTownPlan();
+        if (townPlan != null) {
+            paintOutskirts(g2d, townPlan);
+        } else if (defensiveBuildings.isEmpty()) {
             paintOutsideColonyBackground(g2d, null);
         }
-        
+
         for (Building defensiveBuilding : defensiveBuildings) {
             paintOutsideColonyBackground(g2d, defensiveBuilding.getType());
+        }
+        if (townPlan != null && outsideColonyPanel.getComponentCount() == 0) {
+            final Graphics2D hint = (Graphics2D)g.create(
+                outsideColonyScroll.getX(), outsideColonyScroll.getY(),
+                outsideColonyScroll.getWidth(), outsideColonyScroll.getHeight());
+            CargoPanel.paintHint(hint,
+                Messages.message("colonyPanel.outside.empty"),
+                outsideColonyScroll.getSize(), 0.4f);
+            hint.dispose();
         }
         
         final BufferedImage unavailable = getImageLibrary().getScaledCargoHold(false);
@@ -640,6 +679,25 @@ public final class ColonyPanel extends PortPanel
                 );
             
             
+            // Name each number on a plate under its octagon
+            final Font plateFont = FontLibrary.getScaledFont("simple-bold-tiny");
+            final int plateWidth = getImageLibrary().scaleInt(84);
+            final int plateHeight = getImageLibrary().scaleInt(17);
+            final int upperPlateY = y + getImageLibrary().scaleInt(64);
+            final int lowerPlateY = y + getImageLibrary().scaleInt(210);
+            TownPainter.paintSign(g2d, plateFont, x + colonySizeX, upperPlateY,
+                plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.colonists"), null, null);
+            TownPainter.paintSign(g2d, plateFont, x + colonyBonusX, upperPlateY,
+                plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.room"), null, null);
+            TownPainter.paintSign(g2d, plateFont, x + rebelPercentageX,
+                lowerPlateY, plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.rebels"), null, null);
+            TownPainter.paintSign(g2d, plateFont, x + royalistPercentageX,
+                lowerPlateY, plateWidth, plateHeight,
+                Messages.message("colonyPanel.octagon.royalists"), null, null);
+
             g.setFont(origFont);
         }
         
@@ -708,6 +766,269 @@ public final class ColonyPanel extends PortPanel
             }
         }
         return colonyTitleImage;
+    }
+
+    /**
+     * Set the colonist being dragged, so that every building and tile
+     * shows what it would produce there.
+     *
+     * @param unit The {@code Unit} being dragged, or null when the drag
+     *     ends.
+     */
+    public void setPreviewUnit(Unit unit) {
+        this.previewUnit = (unit != null && unit.isPerson()) ? unit : null;
+        if (buildingsPanel != null) buildingsPanel.repaint();
+        if (tilesPanel != null) tilesPanel.repaint();
+    }
+
+    /**
+     * What the dragged colonist would do at a work location.
+     */
+    static final class WorkPreview {
+
+        /** How good the work would be. */
+        enum Kind { GOOD, WARNING, BAD }
+
+        /** How good the work would be. */
+        final Kind kind;
+
+        /** What would be made, or why the colonist can not work there. */
+        final StringTemplate main;
+
+        /** A catch, such as missing goods, or null if none. */
+        final StringTemplate note;
+
+        WorkPreview(Kind kind, StringTemplate main, StringTemplate note) {
+            this.kind = kind;
+            this.main = main;
+            this.note = note;
+        }
+    }
+
+    /**
+     * Describe what the dragged colonist would do at a work location.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param wl The {@code WorkLocation} to describe.
+     * @param unit The {@code Unit} being dragged.
+     * @return A {@code WorkPreview}, or null if there is nothing to say,
+     *     as for a building with no room for workers at all.
+     */
+    static WorkPreview getWorkPreview(WorkLocation wl, Unit unit) {
+        if (wl.getUnitCapacity() <= 0) return null;
+        StringTemplate note = null;
+        final NoAddReason reason = (unit.getLocation() == wl)
+            ? NoAddReason.NONE : wl.getNoAddReason(unit);
+        switch (reason) {
+        case NONE: case ALREADY_PRESENT:
+            break;
+        case CLAIM_REQUIRED:
+            // The colonist can work there, once the land is claimed
+            final Player owner = ((ColonyTile)wl).getWorkTile().getOwner();
+            if (owner != null && owner.isIndian()) {
+                note = StringTemplate.key("colonyPanel.preview.native");
+            }
+            break;
+        case CAPACITY_EXCEEDED:
+            return cannot("colonyPanel.preview.full");
+        case MISSING_ABILITY:
+            return cannot((wl instanceof ColonyTile
+                    && !((ColonyTile)wl).getWorkTile().isLand())
+                ? "colonyPanel.preview.docks"
+                : "colonyPanel.preview.cannot");
+        case MISSING_SKILL: case MINIMUM_SKILL: case MAXIMUM_SKILL:
+            return cannot("colonyPanel.preview.skill");
+        case OCCUPIED_BY_ENEMY: case OWNED_BY_ENEMY: case ANOTHER_COLONY:
+            return cannot("colonyPanel.preview.taken");
+        default:
+            return cannot("colonyPanel.preview.cannot");
+        }
+        // The school rules (checked above) decide who may teach
+        if (wl instanceof Building && ((Building)wl).canTeach()) {
+            return new WorkPreview(WorkPreview.Kind.GOOD,
+                StringTemplate.key("colonyPanel.preview.teach"), null);
+        }
+        final Occupation occupation = wl.getOccupation(unit, true);
+        GoodsType type = (occupation == null) ? null : occupation.workType;
+        ProductionType productionType = (occupation == null) ? null
+            : occupation.productionType;
+        // With no input to work on a building finds no occupation, but
+        // it is more helpful to say what it would make and what is missing
+        if (type == null && wl instanceof Building) {
+            for (ProductionType pt : ((Building)wl).getType()
+                     .getAvailableProductionTypes(false)) {
+                final AbstractGoods output = first(pt.getOutputs());
+                if (output != null) {
+                    type = output.getType();
+                    productionType = pt;
+                    break;
+                }
+            }
+        }
+        if (type == null) return cannot("colonyPanel.preview.cannot");
+        final int amount = wl.getPotentialProduction(type, unit.getType());
+        final StringTemplate main
+            = StringTemplate.template("colonyPanel.preview.produce")
+                .addAmount("%amount%", amount)
+                .addNamed("%goods%", type);
+        // Buildings turn goods into other goods: say if the input is missing
+        if (note == null && wl instanceof Building && productionType != null) {
+            final Colony colony = wl.getColony();
+            for (AbstractGoods input : iterable(productionType.getInputs())) {
+                final GoodsType in = input.getType();
+                if (colony.getGoodsCount(in) <= 0
+                    && colony.getNetProductionOf(in) <= 0) {
+                    note = StringTemplate.template("colonyPanel.preview.missing")
+                        .addNamed("%goods%", in);
+                    break;
+                }
+            }
+        }
+        return new WorkPreview((note == null && amount > 0)
+            ? WorkPreview.Kind.GOOD : WorkPreview.Kind.WARNING, main, note);
+    }
+
+    /**
+     * Make a preview saying the colonist can not work somewhere.
+     *
+     * @param key The message key saying why.
+     * @return The {@code WorkPreview}.
+     */
+    private static WorkPreview cannot(String key) {
+        return new WorkPreview(WorkPreview.Kind.BAD,
+                               StringTemplate.key(key), null);
+    }
+
+    /**
+     * Draw the work preview of the dragged colonist over a building or
+     * tile.  The preview is drawn by the panel holding the building or
+     * tile, so that it may spill over the edges of the building.
+     *
+     * @param g The {@code Graphics} of the holding panel.
+     * @param r The bounds of the building or tile in the holding panel.
+     * @param wl The {@code WorkLocation} the building or tile shows.
+     * @param limit The width of the holding panel, to keep within.
+     */
+    private void paintWorkPreview(Graphics g, Rectangle r, WorkLocation wl,
+                                  int limit) {
+        final Unit unit = this.previewUnit;
+        if (unit == null || wl == null) return;
+        final WorkPreview preview = getWorkPreview(wl, unit);
+        if (preview == null) return;
+        final String main = Messages.message(preview.main);
+        final String note = (preview.note == null) ? null
+            : Messages.message(preview.note);
+        final Graphics2D g2d = (Graphics2D)g.create();
+        try {
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                 RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                 RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            final int pad = getImageLibrary().scaleInt(4);
+            // Shrink the text a little if it is much wider than the
+            // building, but let it spill over a bit rather than cut it.
+            final int room = r.width + 2 * getImageLibrary().scaleInt(12);
+            Font mainFont = FontLibrary.getScaledFont("simple-bold-smaller");
+            Font noteFont = FontLibrary.getScaledFont("simple-plain-tiny");
+            final float least = mainFont.getSize2D() * 0.75f;
+            while (Math.max(g2d.getFontMetrics(mainFont).stringWidth(main),
+                    (note == null) ? 0
+                        : g2d.getFontMetrics(noteFont).stringWidth(note))
+                   + 2 * pad > room
+                && mainFont.getSize2D() > least) {
+                mainFont = mainFont.deriveFont(mainFont.getSize2D() - 1f);
+                noteFont = noteFont.deriveFont(
+                    Math.max(8f, noteFont.getSize2D() - 1f));
+            }
+            final FontMetrics mfm = g2d.getFontMetrics(mainFont);
+            final FontMetrics nfm = g2d.getFontMetrics(noteFont);
+            final int w = Math.max(mfm.stringWidth(main),
+                (note == null) ? 0 : nfm.stringWidth(note)) + 2 * pad;
+            final int h = mfm.getHeight() + pad
+                + ((note == null) ? 0 : nfm.getHeight());
+            final int x = Math.max(0, Math.min(limit - w,
+                    r.x + (r.width - w) / 2));
+            final int y = r.y + Math.max(0, (r.height - h) / 2);
+            g2d.setColor((preview.kind == WorkPreview.Kind.GOOD)
+                ? new Color(20, 90, 20, 220)
+                : (preview.kind == WorkPreview.Kind.WARNING)
+                ? new Color(150, 90, 10, 225)
+                : new Color(120, 20, 20, 215));
+            g2d.fillRoundRect(x, y, w, h, 2 * pad, 2 * pad);
+            g2d.setColor(Color.WHITE);
+            g2d.setFont(mainFont);
+            g2d.drawString(main, x + (w - mfm.stringWidth(main)) / 2,
+                           y + pad / 2 + mfm.getAscent());
+            if (note != null) {
+                g2d.setColor(new Color(255, 236, 200));
+                g2d.setFont(noteFont);
+                g2d.drawString(note, x + (w - nfm.stringWidth(note)) / 2,
+                    y + pad / 2 + mfm.getHeight() + nfm.getAscent());
+            }
+        } finally {
+            g2d.dispose();
+        }
+    }
+
+    /**
+     * Paint the land outside the town, where the colonists who are not
+     * working wait.
+     *
+     * @param g2d The {@code Graphics2D} to paint with.
+     * @param plan The {@code TownPlan} of the town.
+     */
+    private void paintOutskirts(Graphics2D g2d, TownPlan plan) {
+        final Rectangle r = outsideColonyScroll.getBounds();
+        if (r.width <= 0 || r.height <= 0) return;
+        // The avenue runs on down from the town
+        int avenueX = r.width / 2;
+        final List<Rectangle> avenue = plan.getAvenue();
+        if (!avenue.isEmpty()) {
+            final Rectangle a = avenue.get(avenue.size() - 1);
+            avenueX = a.x + a.width / 2 + buildingsScroll.getX() - r.x;
+        }
+        final String key = r.width + "x" + r.height + "/" + avenueX
+            + "/" + plan.getRoad() + "/" + getColony().getTile().getType();
+        if (outskirtsImage == null || !key.equals(outskirtsKey)) {
+            outskirtsImage = new BufferedImage(r.width, r.height,
+                                               BufferedImage.TYPE_INT_ARGB);
+            final Graphics2D og = outskirtsImage.createGraphics();
+            try {
+                TownPainter.paintOutskirts(og, r.width, r.height,
+                    getTownLand(), getTownWornLand(), plan.getRoad(), avenueX);
+            } finally {
+                og.dispose();
+            }
+            outskirtsKey = key;
+        }
+        g2d.drawImage(outskirtsImage, r.x, r.y, null);
+    }
+
+    /**
+     * Get a picture of the land the colony stands on.
+     *
+     * @return The terrain image.
+     */
+    private BufferedImage getTownLand() {
+        final ImageLibrary lib = getImageLibrary();
+        return lib.getTerrainImage(getColony().getTile().getType(), 0, 0,
+                                   lib.scale(TOWN_LAND_SIZE));
+    }
+
+    /**
+     * Get a picture of patchy plains grass, to mix into the land of the
+     * town as the townsfolk wear it down.
+     *
+     * @return The terrain image, or null if the land is plains already.
+     */
+    private BufferedImage getTownWornLand() {
+        final ImageLibrary lib = getImageLibrary();
+        final TileType tileType = getColony().getTile().getType();
+        final TileType plains
+            = getSpecification().getTileType("model.tile.plains");
+        return (plains == null || plains == tileType) ? null
+            : lib.getTerrainImage(plains, 0, 0, lib.scale(TOWN_LAND_SIZE));
     }
 
     private void paintOutsideColonyBackground(Graphics2D g2d, BuildingType buildingType) {
@@ -1286,22 +1607,81 @@ public final class ColonyPanel extends PortPanel
     }
 
     private void updateNetProductionPanel() {
-        final FreeColClient freeColClient = getFreeColClient();
         final Colony colony = getColony();
         final Specification spec = colony.getSpecification();
         // FIXME: find out why the cache needs to be explicitly invalidated
         colony.invalidateCache();
 
         netProductionPanel.removeAll();
+        // Food first, with what it means for the colony
+        final GoodsType food = spec.getPrimaryFoodType();
+        netProductionPanel.add(makeNetProductionLabel(food,
+                colony.getAdjustedNetProductionOf(food),
+                getFoodStatus(colony)));
         for (GoodsType goodsType : spec.getGoodsTypeList()) {
+            if (goodsType.isFoodType()) continue;
             int amount = colony.getAdjustedNetProductionOf(goodsType);
             if (amount != 0) {
-                AbstractGoods ag = new AbstractGoods(goodsType, amount);
-                netProductionPanel.add(new ProductionLabel(freeColClient, ag));
+                netProductionPanel.add(makeNetProductionLabel(goodsType,
+                        amount, null));
             }
         }
         netProductionPanel.revalidate();
         netProductionPanel.repaint();
+    }
+
+    /**
+     * Make a label for the net production of some goods: its picture
+     * and the amount, with an optional remark.
+     *
+     * @param type The {@code GoodsType} produced.
+     * @param amount The net amount produced each turn.
+     * @param remark A remark on the amount, or null.
+     * @return The label.
+     */
+    private JLabel makeNetProductionLabel(GoodsType type, int amount,
+                                          StringTemplate remark) {
+        final String number = (amount > 0) ? "+" + amount
+            : String.valueOf(amount);
+        final JLabel label = new JLabel((remark == null) ? number
+            : Messages.message(StringTemplate.template("colonyPanel.netRemark")
+                .addName("%amount%", number)
+                .addStringTemplate("%remark%", remark)),
+            new ImageIcon(getImageLibrary().getSmallGoodsTypeImage(type)),
+            JLabel.LEFT);
+        label.setFont(FontLibrary.getScaledFont("simple-bold-small"));
+        label.setForeground((amount > 0) ? new Color(214, 240, 170)
+            : (amount < 0) ? new Color(255, 160, 140)
+            : new Color(240, 225, 190));
+        label.setToolTipText(Messages.message(StringTemplate
+                .template("colonyPanel.netTip")
+                .addName("%amount%", number)
+                .addNamed("%goods%", type)));
+        return label;
+    }
+
+    /**
+     * Say what the food production means for a colony: when a new
+     * colonist will be born, or when it will starve.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param colony The {@code Colony} to check.
+     * @return A template describing the food situation.
+     */
+    static StringTemplate getFoodStatus(Colony colony) {
+        final int starve = colony.getStarvationTurns();
+        if (starve == 0) {
+            return StringTemplate.key("colonyPanel.food.starving");
+        } else if (starve > 0) {
+            return StringTemplate.template("colonyPanel.food.starve")
+                .addAmount("%number%", starve);
+        }
+        final int grow = colony.getNewColonistTurns();
+        return (grow > 0)
+            ? StringTemplate.template("colonyPanel.food.grow")
+                .addAmount("%number%", grow)
+            : StringTemplate.key("colonyPanel.food.still");
     }
 
     private void updateOutsideColonyPanel() {
@@ -2103,6 +2483,10 @@ public final class ColonyPanel extends PortPanel
      */
     public final class BuildingsPanel extends MigPanel {
 
+        /** A picture of the town, and the plan it was drawn from. */
+        private BufferedImage townImage = null;
+        private TownPlan townImagePlan = null;
+
         /** Always pop up the build queue when clicking on a building. */
         private final MouseAdapter buildQueueListener
             = new MouseAdapter() {
@@ -2123,15 +2507,92 @@ public final class ColonyPanel extends PortPanel
         /**
          * {@inheritDoc}
          */
+        /**
+         * Get the plan of the town the buildings stand in.
+         *
+         * @return The {@code TownPlan}, or null if the buildings are
+         *     not laid out as a town.
+         */
+        public TownPlan getTownPlan() {
+            return (getLayout() instanceof BuildingsLayoutManager)
+                ? ((BuildingsLayoutManager)getLayout()).getPlan()
+                : null;
+        }
+
         @Override
         protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
+            final TownPlan plan = getTownPlan();
+            if (plan != null && getColony() != null) {
+                // The town only changes with its plan, so keep a picture
+                // of it rather than drawing it on every repaint
+                if (townImage == null || townImagePlan != plan
+                    || townImage.getWidth() != getWidth()
+                    || townImage.getHeight() != getHeight()) {
+                    townImage = new BufferedImage(getWidth(), getHeight(),
+                        BufferedImage.TYPE_INT_ARGB);
+                    townImagePlan = plan;
+                    final Graphics2D tg = townImage.createGraphics();
+                    try {
+                        paintTown(tg, plan);
+                    } finally {
+                        tg.dispose();
+                    }
+                }
+                g.drawImage(townImage, 0, 0, null);
+            } else {
+                townImage = null;
+                townImagePlan = null;
+                super.paintComponent(g);
+            }
             if (fullscreen && getColony() != null) {
                 // The layout keeps this area free of buildings
                 final BufferedImage banner = getFullscreenTitleImage();
                 g.drawImage(banner, (getWidth() - banner.getWidth()) / 2,
                             BANNER_MARGIN, null);
             }
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        protected void paintChildren(Graphics g) {
+            super.paintChildren(g);
+            // Over the buildings, what the dragged colonist would do
+            for (Component c : getComponents()) {
+                if (c instanceof ASingleBuildingPanel && c.isVisible()) {
+                    paintWorkPreview(g, c.getBounds(),
+                        ((ASingleBuildingPanel)c).getBuilding(), getWidth());
+                }
+            }
+        }
+
+        /**
+         * Draw the town the buildings stand in.
+         *
+         * @param g The {@code Graphics2D} to draw with.
+         * @param plan The {@code TownPlan} of the town.
+         */
+        private void paintTown(Graphics2D g, TownPlan plan) {
+            final ImageLibrary lib = getImageLibrary();
+            final TileType tileType = getColony().getTile().getType();
+            final BufferedImage land = getTownLand();
+            final BufferedImage worn = getTownWornLand();
+            // Groves of the trees that grow round about
+            final TileType forest = (tileType.isForested()) ? tileType
+                : getSpecification().getTileType("model.tile.mixedForest");
+            final BufferedImage trees = (forest == null) ? null
+                : lib.getForestImage(forest, lib.scale(TOWN_LAND_SIZE));
+            TownPainter.paint(g, getWidth(), getHeight(),
+                plan, land, worn, trees, p ->
+                    (p.component instanceof ASingleBuildingPanel)
+                    ? lib.getScaledBuildingImage(
+                        ((ASingleBuildingPanel)p.component).getBuilding())
+                    : (p.empty) ? lib.getScaledBuildingEmptyLandImage()
+                    : null);
+            TownPainter.paintSigns(g, plan, lib,
+                FontLibrary.getScaledFont("simple-bold-tiny"),
+                getWidth());
         }
 
 
@@ -2142,6 +2603,9 @@ public final class ColonyPanel extends PortPanel
             final Colony colony = getColony();
             if (colony == null) return;
             cleanup();
+            ((BuildingsLayoutManager)getLayout()).setRoadWidths(
+                getImageLibrary().scaleInt(12),
+                getImageLibrary().scaleInt(22));
             
             final List<BuildingType> allBuildableTypes = getSpecification().getBuildingTypeList().stream()
                     .filter(bt -> bt.getUpgradesFrom() == null)
@@ -2159,9 +2623,13 @@ public final class ColonyPanel extends PortPanel
                 }
                 final List<Building> btBuildings = constructedBuildings.get(bt);
                 if (btBuildings == null) {
-                    final JPanel emptyPlot = new EmptyBuildingSite();
+                    final JPanel emptyPlot = new EmptyBuildingSite(bt);
                     final Dimension size = getImageLibrary().determineMaxSizeUsingSizeFromAllLevels(bt, colony.getOwner());
-                    emptyPlot.setMinimumSize(size);
+                    // The town layout only needs room for the empty land
+                    final BufferedImage land = getImageLibrary()
+                        .getScaledBuildingEmptyLandImage();
+                    emptyPlot.setMinimumSize(new Dimension(land.getWidth(),
+                                                           land.getHeight()));
                     emptyPlot.setPreferredSize(size);
                     emptyPlot.setSize(size);
                     add(emptyPlot);
@@ -2371,8 +2839,17 @@ public final class ColonyPanel extends PortPanel
         }
         
         public final class EmptyBuildingSite extends JPanel{
-            EmptyBuildingSite() {
+
+            /** The type of building that could stand here. */
+            private final BuildingType buildingType;
+
+            EmptyBuildingSite(BuildingType buildingType) {
+                this.buildingType = buildingType;
                 setOpaque(false);
+            }
+
+            public BuildingType getBuildingType() {
+                return this.buildingType;
             }
             
             protected void paintComponent(Graphics g) {
@@ -2527,6 +3004,21 @@ public final class ColonyPanel extends PortPanel
                 g.translate(0, topOffset);
                 getGUI().displayColonyTiles((Graphics2D)g, tiles, colony);
                 g.translate(0, -topOffset);
+            }
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        protected void paintChildren(Graphics g) {
+            super.paintChildren(g);
+            // Over the tiles, what the dragged colonist would do
+            for (Component c : getComponents()) {
+                if (c instanceof ASingleTilePanel) {
+                    paintWorkPreview(g, c.getBounds(),
+                        ((ASingleTilePanel)c).colonyTile, getWidth());
+                }
             }
         }
 

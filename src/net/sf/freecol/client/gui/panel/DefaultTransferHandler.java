@@ -49,6 +49,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import javax.swing.TransferHandler;
 
 import net.sf.freecol.client.FreeColClient;
@@ -87,6 +88,9 @@ public final class DefaultTransferHandler extends TransferHandler {
         implements DragGestureListener, DragSourceListener {
 
         private boolean scrolls;
+
+        /** The colony panel previewing the unit being dragged, if any. */
+        private ColonyPanel previewPanel = null;
 
 
         private void updatePartialChosen(JComponent comp, boolean partial) {
@@ -152,6 +156,15 @@ public final class DefaultTransferHandler extends TransferHandler {
 
             this.scrolls = c.getAutoscrolls();
             c.setAutoscrolls(false);
+
+            // Let a colony panel show where the dragged colonist could work
+            if (c instanceof UnitLabel) {
+                this.previewPanel = (ColonyPanel)SwingUtilities
+                    .getAncestorOfClass(ColonyPanel.class, c);
+                if (this.previewPanel != null) {
+                    this.previewPanel.setPreviewUnit(((UnitLabel)c).getUnit());
+                }
+            }
             try {
                 Cursor cursor = getCursor(c);
                 dge.startDrag(cursor, t, this);
@@ -182,6 +195,10 @@ public final class DefaultTransferHandler extends TransferHandler {
          * {@inheritDoc}
          */
         public void dragDropEnd(DragSourceDropEvent dsde) {
+            if (this.previewPanel != null) {
+                this.previewPanel.setPreviewUnit(null);
+                this.previewPanel = null;
+            }
             DragSourceContext dsc = dsde.getDragSourceContext();
             JComponent c = (JComponent)dsc.getComponent();
             if (c.getTransferHandler() instanceof DefaultTransferHandler) {

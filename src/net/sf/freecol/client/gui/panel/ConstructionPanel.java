@@ -19,11 +19,13 @@
 
 package net.sf.freecol.client.gui.panel;
 
+import static net.sf.freecol.common.util.CollectionUtils.none;
 import static net.sf.freecol.common.util.StringUtils.getBreakingPoint;
 
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Image;
 import java.awt.event.MouseAdapter;
@@ -43,7 +45,10 @@ import net.sf.freecol.client.gui.ImageLibrary;
 import net.sf.freecol.common.i18n.Messages;
 import net.sf.freecol.common.model.AbstractGoods;
 import net.sf.freecol.common.model.BuildableType;
+import net.sf.freecol.common.model.Building;
 import net.sf.freecol.common.model.Colony;
+import net.sf.freecol.common.model.GoodsType;
+import net.sf.freecol.common.model.ProductionType;
 import net.sf.freecol.common.model.StringTemplate;
 
 
@@ -201,6 +206,14 @@ public class ConstructionPanel extends MigPanel
                                            amountNeeded, amountAvailable, amountProduced),
                     "height 20:");
             }
+            // When will it be done, or why is it not getting done?
+            final Font statusFont = font.deriveFont(font.getSize2D() * 0.85f);
+            final JLabel status = new JLabel(wrap(
+                Messages.message(getBuildStatus(colony, buildable)),
+                getFontMetrics(statusFont), lib.scaleInt(190)));
+            status.setFont(statusFont);
+            status.setForeground(getForeground());
+            infoPanel.add(status);
             add(infoPanel);
         }
 
@@ -208,6 +221,87 @@ public class ConstructionPanel extends MigPanel
         repaint();
     }
 
+
+    /**
+     * Break a text into centered lines no wider than a given width.
+     *
+     * @param text The text.
+     * @param fm The {@code FontMetrics} of the font it is shown in.
+     * @param width The greatest width of a line.
+     * @return The text as HTML for a label.
+     */
+    private static String wrap(String text, FontMetrics fm, int width) {
+        final StringBuilder sb = new StringBuilder("<html><center>");
+        String line = "";
+        for (String word : text.split(" ")) {
+            final String longer = (line.isEmpty()) ? word : line + " " + word;
+            if (!line.isEmpty() && fm.stringWidth(longer) > width) {
+                sb.append(escape(line)).append("<br>");
+                line = word;
+            } else {
+                line = longer;
+            }
+        }
+        return sb.append(escape(line)).append("</center></html>").toString();
+    }
+
+    private static String escape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;");
+    }
+
+    /**
+     * Say when a build will be done, or why it is not getting done.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param colony The {@code Colony} building.
+     * @param buildable The {@code BuildableType} being built.
+     * @return A template describing the state of the build.
+     */
+    static StringTemplate getBuildStatus(Colony colony,
+                                         BuildableType buildable) {
+        final AbstractGoods needed = new AbstractGoods();
+        final int turns = colony.getTurnsToComplete(buildable, needed);
+        if (turns >= 0) {
+            return (turns <= 1)
+                ? StringTemplate.key("constructionPanel.status.nextTurn")
+                : StringTemplate.template("constructionPanel.status.turns")
+                    .addAmount("%number%", turns);
+        }
+        final GoodsType type = needed.getType();
+        if (type == null) {
+            return StringTemplate.key("constructionPanel.status.stalled");
+        }
+        // Is there a building that could make the missing goods?
+        for (Building building : colony.getBuildings()) {
+            for (ProductionType pt : building.getType()
+                     .getAvailableProductionTypes(false)) {
+                if (none(pt.getOutputs(), AbstractGoods.matches(type))) {
+                    continue;
+                }
+                if (building.getUnitCount() == 0) {
+                    return StringTemplate
+                        .template("constructionPanel.status.nobody")
+                        .addNamed("%goods%", type)
+                        .addNamed("%building%", building);
+                }
+                for (AbstractGoods input : pt.getInputList()) {
+                    final GoodsType in = input.getType();
+                    if (colony.getGoodsCount(in) <= 0
+                        && colony.getNetProductionOf(in) <= 0) {
+                        return StringTemplate
+                            .template("constructionPanel.status.noInput")
+                            .addNamed("%goods%", in)
+                            .addNamed("%building%", building);
+                    }
+                }
+            }
+        }
+        return StringTemplate.template("constructionPanel.status.missing")
+            .addAmount("%amount%", needed.getAmount())
+            .addNamed("%goods%", type);
+    }
 
     /**
      * @return A {@code StringTemplate} of the ConstructionPanel's Label
