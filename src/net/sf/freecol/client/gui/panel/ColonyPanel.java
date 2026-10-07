@@ -203,6 +203,9 @@ public final class ColonyPanel extends PortPanel
     
     private JPanel upperRightPanel = null;
     private BufferedImage colonyTitleImage = null;
+
+    /** Space around the colony name banner at the top of the town. */
+    private static final int BANNER_MARGIN = 6;
     
     private boolean fullscreen = false;
 
@@ -685,13 +688,6 @@ public final class ColonyPanel extends PortPanel
             }
         }
         
-        if (fullscreen) {
-            final BufferedImage colonyTitleImage = getFullscreenTitleImage();
-            final int x = upperRightPanel.getX() + (upperRightPanel.getWidth() - colonyTitleImage.getWidth()) / 2;
-            final int y = inPortScroll.getY() - colonyTitleImage.getHeight();
-            
-            g.drawImage(colonyTitleImage, x, y, null);
-        }
     }
     
     /**
@@ -840,6 +836,15 @@ public final class ColonyPanel extends PortPanel
             });
         updateNetProductionPanel();
 
+        if (fullscreen) {
+            // In full screen the colony name banner sits at the top of
+            // the town, where there is room, rather than in the crowded
+            // right hand column.
+            final BufferedImage banner = getFullscreenTitleImage();
+            ((BuildingsLayoutManager)buildingsPanel.getLayout())
+                .setReservedTop(new Dimension(banner.getWidth(),
+                        banner.getHeight() + BANNER_MARGIN * 2));
+        }
         buildingsPanel.initialize();
         cargoPanel.initialize();
         constructionPanel.initialize();
@@ -874,13 +879,7 @@ public final class ColonyPanel extends PortPanel
         upperRightPanel.add(constructionPanel, "grow, top, wmax 367, height 90");
         add(upperRightPanel, "span 1 3, growy, gapbefore 53, width 400!, wmax 400");
         
-        // In full screen the colony name is drawn on a banner just above
-        // the in-port panel, so always leave room for it there, or the
-        // construction panel covers it when the screen is short.
-        final int titleGap = (fullscreen)
-            ? getFullscreenTitleImage().getHeight() : 0;
-        add(inPortScroll, "span, grow, height 96!, gaptop " + titleGap
-            + ":push");
+        add(inPortScroll, "span, grow, height 96!, gaptop push");
         add(outsideColonyScroll, "grow, height 96!");
         add(cargoScroll, "grow, height 100!");
         add(warehouseScroll, "span, split, height 48:, grow, gap 0 0 0 0, sgy bottomRow");
@@ -2119,6 +2118,20 @@ public final class ColonyPanel extends PortPanel
         public BuildingsPanel() {
             // TODO: Use different seeds per colony for BuildingsLayoutManager?
             super("BuildingsPanelUI", new BuildingsLayoutManager());
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (fullscreen && getColony() != null) {
+                // The layout keeps this area free of buildings
+                final BufferedImage banner = getFullscreenTitleImage();
+                g.drawImage(banner, (getWidth() - banner.getWidth()) / 2,
+                            BANNER_MARGIN, null);
+            }
         }
 
 

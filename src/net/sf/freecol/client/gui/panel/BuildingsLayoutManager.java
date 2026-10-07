@@ -62,6 +62,12 @@ public class BuildingsLayoutManager implements LayoutManager {
      * all the buildings.
      */
     private WrapLayout wrapLayout = new WrapLayout();
+
+    /**
+     * An optional area at the top center kept free of buildings, such
+     * as for the colony name banner.
+     */
+    private Dimension reservedTop = null;
     
     
     /**
@@ -80,6 +86,27 @@ public class BuildingsLayoutManager implements LayoutManager {
      */
     public BuildingsLayoutManager(long layoutSeed) {
         this.layoutSeed = layoutSeed;
+    }
+
+    /**
+     * Keep an area at the top center free of buildings.
+     *
+     * @param reservedTop The size of the area, or null for none.
+     */
+    public void setReservedTop(Dimension reservedTop) {
+        this.reservedTop = reservedTop;
+    }
+
+    /**
+     * Get the area at the top center kept free of buildings.
+     *
+     * @param size The size of the container.
+     * @return The reserved area, or null if none.
+     */
+    private Rectangle getReservedArea(Dimension size) {
+        return (reservedTop == null) ? null
+            : new Rectangle((size.width - reservedTop.width) / 2, 0,
+                            reservedTop.width, reservedTop.height);
     }
 
     
@@ -176,6 +203,8 @@ public class BuildingsLayoutManager implements LayoutManager {
         int padding = 16;
         for (int j=0; j<MAX_TOTAL_TRIES; j++) {
             final List<Rectangle> usedRectangles = new ArrayList<>(entries.size());
+            final Rectangle reserved = getReservedArea(size);
+            if (reserved != null) usedRectangles.add(reserved);
             final List<Entry> placeEntries; 
             
             if (j > MAX_FREE_PLACEMENT) {
@@ -248,7 +277,9 @@ public class BuildingsLayoutManager implements LayoutManager {
         }
         final long minimumArea = entries.stream()
                 .map(BuildingsLayoutManager::areaOf)
-                .reduce((a, b) -> a + b).get();
+                .reduce((a, b) -> a + b).get()
+            + ((reservedTop == null) ? 0
+                : ((long) reservedTop.width) * reservedTop.height);
         return minimumArea > ((long) size.width) * size.height;
     }
     
