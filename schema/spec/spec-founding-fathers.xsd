@@ -41,6 +41,33 @@
         <xs:element ref="ability"/>
         <xs:element ref="event"/>
         <xs:element ref="modifier"/>
+        <xs:element name="dilemma">
+          <xs:annotation>
+            <xs:documentation>
+              A bold proposal the father makes on joining the
+              congress: extra abilities and modifiers the player may
+              accept at a one-off cost.
+            </xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:choice minOccurs="0" maxOccurs="unbounded">
+              <xs:element ref="ability"/>
+              <xs:element ref="modifier"/>
+            </xs:choice>
+            <xs:attribute name="cost" use="required">
+              <xs:simpleType>
+                <xs:restriction base="xs:token">
+                  <xs:enumeration value="gold"/>
+                  <xs:enumeration value="tax"/>
+                  <xs:enumeration value="native_tension"/>
+                  <xs:enumeration value="european_tension"/>
+                  <xs:enumeration value="royal_force"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="amount" use="required" type="xs:int"/>
+          </xs:complexType>
+        </xs:element>
         <xs:element name="nation">
           <xs:complexType>
             <xs:attribute name="id" use="required" type="NationId"/>

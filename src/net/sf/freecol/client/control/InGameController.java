@@ -51,6 +51,7 @@ import net.sf.freecol.client.FreeColClient;
 import net.sf.freecol.client.gui.ChoiceItem;
 import net.sf.freecol.client.gui.DialogHandler;
 import net.sf.freecol.client.gui.GUI;
+import net.sf.freecol.client.gui.ImageLibrary;
 import net.sf.freecol.client.gui.option.FreeColActionUI;
 import net.sf.freecol.client.gui.panel.FreeColPanel;
 import net.sf.freecol.common.FreeColException;
@@ -3970,6 +3971,36 @@ public final class InGameController extends FreeColClientHolder {
         invokeLater(() ->
             getGUI().showMonarchDialog(action, template, monarchKey,
                 (Boolean b) -> monarchAction(action, b)));
+    }
+
+    /**
+     * Ask the player whether to accept the bold proposal of a founding
+     * father who has just joined the congress.
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     */
+    public void fatherDilemmaHandler(FoundingFather father) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma == null) return;
+        final StringTemplate template = StringTemplate
+            .template("model.foundingFather.dilemma.offer")
+            .addNamed("%foundingFather%", father)
+            .add("%proposal%", father.getId() + ".dilemma")
+            .addStringTemplate("%cost%", StringTemplate
+                .template(dilemma.getCost().getKey())
+                .addAmount("%amount%", dilemma.getAmount()));
+        invokeLater(() -> {
+            final ImageLibrary lib = getGUI().getFixedImageLibrary();
+            final javax.swing.ImageIcon icon = (lib == null) ? null
+                : new javax.swing.ImageIcon(lib.getFoundingFatherImage(father,
+                                                                       false));
+            boolean accept = getGUI().modalConfirmDialog(null, template, icon,
+                "model.foundingFather.dilemma.accept",
+                "model.foundingFather.dilemma.decline", false);
+            if (askServer().answerFatherDilemma(father, accept) && accept) {
+                updateGUI(null, false);
+            }
+        });
     }
 
     /**

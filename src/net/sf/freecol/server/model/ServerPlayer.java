@@ -121,6 +121,7 @@ import net.sf.freecol.common.networking.ChangeSet;
 import net.sf.freecol.common.networking.ChangeSet.See;
 import net.sf.freecol.common.networking.ChooseFoundingFatherMessage;
 import net.sf.freecol.common.networking.Connection;
+import net.sf.freecol.common.networking.FatherDilemmaMessage;
 import net.sf.freecol.common.networking.FirstContactMessage;
 import net.sf.freecol.common.networking.IndianDemandMessage;
 import net.sf.freecol.common.networking.LootCargoMessage;
@@ -177,6 +178,9 @@ public class ServerPlayer extends Player implements TurnTaker {
 
     /** Remaining emigrants to select due to a fountain of youth */
     private int remainingEmigrants = 0;
+
+    /** The founding father whose bold proposal awaits an answer. */
+    private FoundingFather pendingDilemma = null;
 
     /** Players with respect to which stance has changed. */
     private final List<Player> stanceDirty = new ArrayList<>();
@@ -2124,6 +2128,113 @@ outer:  for (Effect effect : effects) {
 
         if (europeDirty) cs.add(See.only(this), europe);
         if (visibilityChange) invalidateCanSeeTiles(); //+vis(this)
+
+        // Offer the bold proposal, if the player can afford it.
+        // Human players are asked, AI players take it half of the time.
+        if (canAffordDilemma(father)) {
+            if (isAI()) {
+                if (randomInt(logger, "Accept dilemma", random, 2) == 0) {
+                    csAcceptDilemma(father, random, cs);
+                }
+            } else {
+                this.pendingDilemma = father;
+                cs.add(See.only(this), new FatherDilemmaMessage(father));
+            }
+        }
+    }
+
+    /**
+     * Get the father whose bold proposal awaits an answer.
+     *
+     * @return The {@code FoundingFather}, or null if none.
+     */
+    public FoundingFather getPendingDilemma() {
+        return this.pendingDilemma;
+    }
+
+    /**
+     * Set the father whose bold proposal awaits an answer.
+     *
+     * @param father The {@code FoundingFather}, or null to clear.
+     */
+    public void setPendingDilemma(FoundingFather father) {
+        this.pendingDilemma = father;
+    }
+
+    /**
+     * Can this player accept the bold proposal of a founding father?
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     * @return True if there is a proposal and its cost can be paid.
+     */
+    public boolean canAffordDilemma(FoundingFather father) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma == null || hasAcceptedDilemma(father)) return false;
+        switch (dilemma.getCost()) {
+        case GOLD:
+            return checkGold(dilemma.getAmount());
+        case TAX:
+            return getTax() + dilemma.getAmount()
+                <= getSpecification().getInteger(GameOptions.MAXIMUM_TAX);
+        case ROYAL_FORCE:
+            return getMonarch() != null && !isRebel();
+        default:
+            return true;
+        }
+    }
+
+    /**
+     * Accept the bold proposal of a founding father: pay its cost and
+     * gain its extra features.
+     *
+     * @param father The {@code FoundingFather} making the proposal.
+     * @param random A pseudo-random number source.
+     * @param cs A {@code ChangeSet} to update.
+     */
+    public void csAcceptDilemma(FoundingFather father, Random random,
+                                ChangeSet cs) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        final int amount = dilemma.getAmount();
+        switch (dilemma.getCost()) {
+        case GOLD:
+            modifyGold(-amount);
+            cs.addPartial(See.only(this), this,
+                "gold", String.valueOf(this.getGold()));
+            break;
+        case TAX:
+            csSetTax(getTax() + amount, cs);
+            break;
+        case NATIVE_TENSION:
+            for (Player p : transform(getGame().getLiveNativePlayers(),
+                                      p -> p.hasContacted(this))) {
+                ((ServerPlayer)p).csModifyTension(this, amount, cs);//+til
+            }
+            break;
+        case EUROPEAN_TENSION:
+            for (Player p : transform(getGame().getLiveEuropeanPlayers(this),
+                                      p -> !p.isREF())) {
+                ((ServerPlayer)p).csModifyTension(this, amount, cs);
+            }
+            break;
+        case ROYAL_FORCE:
+            for (int i = 0; i < amount; i++) getMonarch().addToREF(random);
+            cs.add(See.only(this), getMonarch());
+            break;
+        default:
+            break;
+        }
+
+        acceptDilemma(father);
+        // Kick the SoL bonus if the proposal changes it
+        if (any(dilemma.getModifiers(),
+                matchKeyEquals(Modifier.SOL, Modifier::getId))) {
+            for (Colony c : getColonyList()) c.addLiberty(0);
+        }
+        cs.add(See.only(this), this);
+        cs.addMessage(this,
+            new ModelMessage(ModelMessage.MessageType.SONS_OF_LIBERTY,
+                             "model.player.dilemmaAccepted", this)
+                .addNamed("%foundingFather%", father));
     }
 
     /**

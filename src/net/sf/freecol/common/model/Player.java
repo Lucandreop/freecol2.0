@@ -274,6 +274,8 @@ public class Player extends FreeColGameObject implements Nameable {
     protected FoundingFather currentFather;
     /** The offered founding fathers. */
     protected final List<FoundingFather> offeredFathers = new ArrayList<>();
+    /** The founding fathers whose bold proposal was accepted. */
+    protected final Set<FoundingFather> dilemmaFathers = new HashSet<>();
 
     /**
      * The tension levels, 0-1000, with 1000 being maximum hostility.
@@ -1469,6 +1471,50 @@ public class Player extends FreeColGameObject implements Nameable {
     public void addFather(FoundingFather father) {
         foundingFathers.add(father);
         addFeatures(father);
+        for (Colony c : getColonyList()) c.invalidateCache();
+    }
+
+    /**
+     * Get the founding fathers whose bold proposal was accepted.
+     *
+     * @return A set of {@code FoundingFather}s.
+     */
+    public Set<FoundingFather> getDilemmaFathers() {
+        return dilemmaFathers;
+    }
+
+    /**
+     * Set the founding fathers whose bold proposal was accepted.
+     *
+     * @param fathers The new set of {@code FoundingFather}s.
+     */
+    protected void setDilemmaFathers(Set<FoundingFather> fathers) {
+        this.dilemmaFathers.clear();
+        for (FoundingFather ff : fathers) acceptDilemma(ff);
+    }
+
+    /**
+     * Has this player accepted the bold proposal of a founding father?
+     *
+     * @param father The {@code FoundingFather} to check.
+     * @return True if the proposal was accepted.
+     */
+    public boolean hasAcceptedDilemma(FoundingFather father) {
+        return dilemmaFathers.contains(father);
+    }
+
+    /**
+     * Accept the bold proposal of a founding father, adding its extra
+     * features.  The cost is handled by the server.
+     *
+     * @param father The {@code FoundingFather} whose proposal to accept.
+     */
+    public void acceptDilemma(FoundingFather father) {
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma == null) return;
+        dilemmaFathers.add(father);
+        for (Ability a : dilemma.getAbilities()) addAbility(a);
+        for (Modifier m : dilemma.getModifiers()) addModifier(m);
         for (Colony c : getColonyList()) c.invalidateCache();
     }
 
@@ -4146,6 +4192,7 @@ public class Player extends FreeColGameObject implements Nameable {
         this.monarch = game.update(o.getMonarch(), false);
         this.highSeas = game.update(o.getHighSeas(), false);
         this.setFoundingFathers(o.getFoundingFathers());
+        this.setDilemmaFathers(o.getDilemmaFathers());
         this.currentFather = o.getCurrentFather();
         this.setTension(o.getTension());
         this.setBannedMissions(game.updateRef(o.getBannedMissions()));
@@ -4180,6 +4227,7 @@ public class Player extends FreeColGameObject implements Nameable {
     private static final String BAN_MISSIONS_TAG = "banMissions";
     private static final String CURRENT_FATHER_TAG = "currentFather";
     private static final String DEAD_TAG = "dead";
+    private static final String DILEMMA_FATHERS_TAG = "dilemmaFathers";
     private static final String ENTRY_LOCATION_TAG = "entryLocation";
     private static final String FOUNDING_FATHERS_TAG = "foundingFathers";
     private static final String GOLD_TAG = "gold";
@@ -4335,6 +4383,10 @@ public class Player extends FreeColGameObject implements Nameable {
 
             xw.writeToListElement(OFFERED_FATHERS_TAG, offeredFathers);
 
+            if (!dilemmaFathers.isEmpty()) {
+                xw.writeToListElement(DILEMMA_FATHERS_TAG, dilemmaFathers);
+            }
+
             if (europe != null) europe.toXML(xw);
 
             if (monarch != null) monarch.toXML(xw);
@@ -4457,6 +4509,7 @@ public class Player extends FreeColGameObject implements Nameable {
         stance.clear();
         foundingFathers.clear();
         offeredFathers.clear();
+        dilemmaFathers.clear();
         europe = null;
         monarch = null;
         clearHistory();
@@ -4500,7 +4553,16 @@ public class Player extends FreeColGameObject implements Nameable {
                     addFather(ff); // addFather adds the features
                 }
             }
-        
+
+        } else if (DILEMMA_FATHERS_TAG.equals(tag)) {
+            List<FoundingFather> dfs = xr.readList(spec, DILEMMA_FATHERS_TAG,
+                                                   FoundingFather.class);
+            if (dfs != null) {
+                for (FoundingFather ff : dfs) {
+                    acceptDilemma(ff); // acceptDilemma adds the features
+                }
+            }
+
         } else if (OFFERED_FATHERS_TAG.equals(tag)) {
             List<FoundingFather> ofs = xr.readList(spec, OFFERED_FATHERS_TAG,
                                                    FoundingFather.class);

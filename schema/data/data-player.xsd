@@ -54,6 +54,24 @@
           </xs:complexType>
         </xs:element>
 
+        <xs:element name="dilemmaFathers">
+          <xs:complexType>
+            <xs:attribute name="xLength" use="required">
+              <xs:annotation>
+                <xs:documentation>Element count</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
+            <xs:anyAttribute namespace="##local" processContents="skip">
+              <xs:annotation>
+                <xs:documentation>
+                  ID of a father whose bold proposal was accepted,
+                  with the names "x0", "x1", "x2" etc.
+                </xs:documentation>
+              </xs:annotation>
+            </xs:anyAttribute>
+          </xs:complexType>
+        </xs:element>
+
         <xs:element ref="highSeas" />
         <xs:element ref="historyEvent" />
 
