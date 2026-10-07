@@ -735,24 +735,72 @@ public final class ColonyPanel extends PortPanel
     }
 
     /**
+     * What the dragged colonist would do at a work location.
+     */
+    static final class WorkPreview {
+
+        /** How good the work would be. */
+        enum Kind { GOOD, WARNING, BAD }
+
+        /** How good the work would be. */
+        final Kind kind;
+
+        /** What would be made, or why the colonist can not work there. */
+        final StringTemplate main;
+
+        /** A catch, such as missing goods, or null if none. */
+        final StringTemplate note;
+
+        WorkPreview(Kind kind, StringTemplate main, StringTemplate note) {
+            this.kind = kind;
+            this.main = main;
+            this.note = note;
+        }
+    }
+
+    /**
      * Describe what the dragged colonist would do at a work location.
      *
      * Package-visible for the test suite.
      *
      * @param wl The {@code WorkLocation} to describe.
      * @param unit The {@code Unit} being dragged.
-     * @return A template describing the work, or null if the unit could
-     *     not work there.
+     * @return A {@code WorkPreview}, or null if there is nothing to say,
+     *     as for a building with no room for workers at all.
      */
-    static StringTemplate getWorkPreview(WorkLocation wl, Unit unit) {
-        if (unit.getLocation() != wl) {
-            NoAddReason reason = wl.getNoAddReason(unit);
-            if (reason != NoAddReason.NONE
-                && reason != NoAddReason.ALREADY_PRESENT) return null;
+    static WorkPreview getWorkPreview(WorkLocation wl, Unit unit) {
+        if (wl.getUnitCapacity() <= 0) return null;
+        StringTemplate note = null;
+        final NoAddReason reason = (unit.getLocation() == wl)
+            ? NoAddReason.NONE : wl.getNoAddReason(unit);
+        switch (reason) {
+        case NONE: case ALREADY_PRESENT:
+            break;
+        case CLAIM_REQUIRED:
+            // The colonist can work there, once the land is claimed
+            final Player owner = ((ColonyTile)wl).getWorkTile().getOwner();
+            if (owner != null && owner.isIndian()) {
+                note = StringTemplate.key("colonyPanel.preview.native");
+            }
+            break;
+        case CAPACITY_EXCEEDED:
+            return cannot("colonyPanel.preview.full");
+        case MISSING_ABILITY:
+            return cannot((wl instanceof ColonyTile
+                    && !((ColonyTile)wl).getWorkTile().isLand())
+                ? "colonyPanel.preview.docks"
+                : "colonyPanel.preview.cannot");
+        case MISSING_SKILL: case MINIMUM_SKILL: case MAXIMUM_SKILL:
+            return cannot("colonyPanel.preview.skill");
+        case OCCUPIED_BY_ENEMY: case OWNED_BY_ENEMY: case ANOTHER_COLONY:
+            return cannot("colonyPanel.preview.taken");
+        default:
+            return cannot("colonyPanel.preview.cannot");
         }
         // The school rules (checked above) decide who may teach
         if (wl instanceof Building && ((Building)wl).canTeach()) {
-            return StringTemplate.key("colonyPanel.preview.teach");
+            return new WorkPreview(WorkPreview.Kind.GOOD,
+                StringTemplate.key("colonyPanel.preview.teach"), null);
         }
         final Occupation occupation = wl.getOccupation(unit, true);
         GoodsType type = (occupation == null) ? null : occupation.workType;
@@ -771,58 +819,106 @@ public final class ColonyPanel extends PortPanel
                 }
             }
         }
-        if (type == null) return null;
+        if (type == null) return cannot("colonyPanel.preview.cannot");
         final int amount = wl.getPotentialProduction(type, unit.getType());
-        StringTemplate t = StringTemplate.template("colonyPanel.preview.produce")
-            .addAmount("%amount%", amount)
-            .addNamed("%goods%", type);
+        final StringTemplate main
+            = StringTemplate.template("colonyPanel.preview.produce")
+                .addAmount("%amount%", amount)
+                .addNamed("%goods%", type);
         // Buildings turn goods into other goods: say if the input is missing
-        if (wl instanceof Building && productionType != null) {
+        if (note == null && wl instanceof Building && productionType != null) {
             final Colony colony = wl.getColony();
             for (AbstractGoods input : iterable(productionType.getInputs())) {
                 final GoodsType in = input.getType();
                 if (colony.getGoodsCount(in) <= 0
                     && colony.getNetProductionOf(in) <= 0) {
-                    return StringTemplate.template("colonyPanel.preview.missing")
-                        .addStringTemplate("%production%", t)
+                    note = StringTemplate.template("colonyPanel.preview.missing")
                         .addNamed("%goods%", in);
+                    break;
                 }
             }
         }
-        return t;
+        return new WorkPreview((note == null && amount > 0)
+            ? WorkPreview.Kind.GOOD : WorkPreview.Kind.WARNING, main, note);
     }
 
     /**
-     * Draw the work preview of the dragged colonist over a component.
+     * Make a preview saying the colonist can not work somewhere.
      *
-     * @param c The component (a building or tile) to draw over.
-     * @param g The {@code Graphics} to draw with.
-     * @param wl The {@code WorkLocation} the component shows.
+     * @param key The message key saying why.
+     * @return The {@code WorkPreview}.
      */
-    private void paintWorkPreview(JComponent c, Graphics g, WorkLocation wl) {
+    private static WorkPreview cannot(String key) {
+        return new WorkPreview(WorkPreview.Kind.BAD,
+                               StringTemplate.key(key), null);
+    }
+
+    /**
+     * Draw the work preview of the dragged colonist over a building or
+     * tile.  The preview is drawn by the panel holding the building or
+     * tile, so that it may spill over the edges of the building.
+     *
+     * @param g The {@code Graphics} of the holding panel.
+     * @param r The bounds of the building or tile in the holding panel.
+     * @param wl The {@code WorkLocation} the building or tile shows.
+     * @param limit The width of the holding panel, to keep within.
+     */
+    private void paintWorkPreview(Graphics g, Rectangle r, WorkLocation wl,
+                                  int limit) {
         final Unit unit = this.previewUnit;
         if (unit == null || wl == null) return;
-        final StringTemplate t = getWorkPreview(wl, unit);
-        final String text = Messages.message((t == null)
-            ? StringTemplate.key("colonyPanel.preview.cannot") : t);
+        final WorkPreview preview = getWorkPreview(wl, unit);
+        if (preview == null) return;
+        final String main = Messages.message(preview.main);
+        final String note = (preview.note == null) ? null
+            : Messages.message(preview.note);
         final Graphics2D g2d = (Graphics2D)g.create();
         try {
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                                  RenderingHints.VALUE_ANTIALIAS_ON);
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
                                  RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g2d.setFont(FontLibrary.getScaledFont("simple-bold-smaller"));
-            final FontMetrics fm = g2d.getFontMetrics();
             final int pad = getImageLibrary().scaleInt(4);
-            final int w = Math.min(c.getWidth(), fm.stringWidth(text) + 2 * pad);
-            final int h = fm.getHeight() + pad;
-            final int x = (c.getWidth() - w) / 2;
-            final int y = Math.max(0, (c.getHeight() - h) / 2);
-            g2d.setColor((t == null) ? new Color(120, 20, 20, 215)
-                : new Color(20, 90, 20, 215));
-            g2d.fillRoundRect(x, y, w, h, h / 2, h / 2);
+            // Shrink the text a little if it is much wider than the
+            // building, but let it spill over a bit rather than cut it.
+            final int room = r.width + 2 * getImageLibrary().scaleInt(12);
+            Font mainFont = FontLibrary.getScaledFont("simple-bold-smaller");
+            Font noteFont = FontLibrary.getScaledFont("simple-plain-tiny");
+            final float least = mainFont.getSize2D() * 0.75f;
+            while (Math.max(g2d.getFontMetrics(mainFont).stringWidth(main),
+                    (note == null) ? 0
+                        : g2d.getFontMetrics(noteFont).stringWidth(note))
+                   + 2 * pad > room
+                && mainFont.getSize2D() > least) {
+                mainFont = mainFont.deriveFont(mainFont.getSize2D() - 1f);
+                noteFont = noteFont.deriveFont(
+                    Math.max(8f, noteFont.getSize2D() - 1f));
+            }
+            final FontMetrics mfm = g2d.getFontMetrics(mainFont);
+            final FontMetrics nfm = g2d.getFontMetrics(noteFont);
+            final int w = Math.max(mfm.stringWidth(main),
+                (note == null) ? 0 : nfm.stringWidth(note)) + 2 * pad;
+            final int h = mfm.getHeight() + pad
+                + ((note == null) ? 0 : nfm.getHeight());
+            final int x = Math.max(0, Math.min(limit - w,
+                    r.x + (r.width - w) / 2));
+            final int y = r.y + Math.max(0, (r.height - h) / 2);
+            g2d.setColor((preview.kind == WorkPreview.Kind.GOOD)
+                ? new Color(20, 90, 20, 220)
+                : (preview.kind == WorkPreview.Kind.WARNING)
+                ? new Color(150, 90, 10, 225)
+                : new Color(120, 20, 20, 215));
+            g2d.fillRoundRect(x, y, w, h, 2 * pad, 2 * pad);
             g2d.setColor(Color.WHITE);
-            g2d.drawString(text, x + pad, y + pad / 2 + fm.getAscent());
+            g2d.setFont(mainFont);
+            g2d.drawString(main, x + (w - mfm.stringWidth(main)) / 2,
+                           y + pad / 2 + mfm.getAscent());
+            if (note != null) {
+                g2d.setColor(new Color(255, 236, 200));
+                g2d.setFont(noteFont);
+                g2d.drawString(note, x + (w - nfm.stringWidth(note)) / 2,
+                    y + pad / 2 + mfm.getHeight() + nfm.getAscent());
+            }
         } finally {
             g2d.dispose();
         }
@@ -2282,6 +2378,21 @@ public final class ColonyPanel extends PortPanel
         }
 
         /**
+         * {@inheritDoc}
+         */
+        @Override
+        protected void paintChildren(Graphics g) {
+            super.paintChildren(g);
+            // Over the buildings, what the dragged colonist would do
+            for (Component c : getComponents()) {
+                if (c instanceof ASingleBuildingPanel && c.isVisible()) {
+                    paintWorkPreview(g, c.getBounds(),
+                        ((ASingleBuildingPanel)c).getBuilding(), getWidth());
+                }
+            }
+        }
+
+        /**
          * Draw the town the buildings stand in.
          *
          * @param g The {@code Graphics2D} to draw with.
@@ -2426,15 +2537,6 @@ public final class ColonyPanel extends PortPanel
                 super(getFreeColClient(), building);
 
                 setOpaque(false);
-            }
-
-            /**
-             * {@inheritDoc}
-             */
-            @Override
-            public void paint(Graphics g) {
-                super.paint(g);
-                paintWorkPreview(this, g, getBuilding());
             }
 
 
@@ -2739,6 +2841,21 @@ public final class ColonyPanel extends PortPanel
         }
 
         /**
+         * {@inheritDoc}
+         */
+        @Override
+        protected void paintChildren(Graphics g) {
+            super.paintChildren(g);
+            // Over the tiles, what the dragged colonist would do
+            for (Component c : getComponents()) {
+                if (c instanceof ASingleTilePanel) {
+                    paintWorkPreview(g, c.getBounds(),
+                        ((ASingleTilePanel)c).colonyTile, getWidth());
+                }
+            }
+        }
+
+        /**
          * Panel for visualizing a {@code ColonyTile}.  The
          * component itself is not visible, however the content of the
          * component is (i.e. the people working and the production)
@@ -2768,17 +2885,6 @@ public final class ColonyPanel extends PortPanel
                 setSize(size);
                 setLocation(((2 - x) + y) * size.width / 2,
                     (x + y) * size.height / 2 + topOffset);
-            }
-
-            /**
-             * {@inheritDoc}
-             */
-            @Override
-            public void paint(Graphics g) {
-                super.paint(g);
-                if (!colonyTile.isColonyCenterTile()) {
-                    paintWorkPreview(this, g, colonyTile);
-                }
             }
 
 

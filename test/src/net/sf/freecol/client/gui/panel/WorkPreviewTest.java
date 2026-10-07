@@ -25,7 +25,6 @@ import net.sf.freecol.common.model.Colony;
 import net.sf.freecol.common.model.ColonyTile;
 import net.sf.freecol.common.model.Game;
 import net.sf.freecol.common.model.GoodsType;
-import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.model.UnitType;
 import net.sf.freecol.server.model.ServerUnit;
@@ -58,27 +57,32 @@ public class WorkPreviewTest extends FreeColTestCase {
             }
         }
         assertNotNull(field);
-        StringTemplate t = ColonyPanel.getWorkPreview(field, unit);
-        assertNotNull("A colonist can work a free field", t);
-        assertEquals("colonyPanel.preview.produce", t.getId());
+        ColonyPanel.WorkPreview p = ColonyPanel.getWorkPreview(field, unit);
+        assertNotNull("A colonist can work a free field", p);
+        assertEquals("colonyPanel.preview.produce", p.main.getId());
+        assertFalse(p.kind == ColonyPanel.WorkPreview.Kind.BAD);
 
         // The carpenter needs lumber, which this colony lacks
         Building carpenter = colony.getBuilding(carpenterType);
         colony.removeGoods(lumberType, colony.getGoodsCount(lumberType));
-        t = ColonyPanel.getWorkPreview(carpenter, unit);
+        p = ColonyPanel.getWorkPreview(carpenter, unit);
         if (colony.getNetProductionOf(lumberType) <= 0) {
-            assertNotNull(t);
-            assertEquals("colonyPanel.preview.missing", t.getId());
+            assertNotNull(p);
+            assertEquals(ColonyPanel.WorkPreview.Kind.WARNING, p.kind);
+            assertEquals("colonyPanel.preview.missing", p.note.getId());
         }
 
         // With lumber in store it is a plain production
         colony.addGoods(lumberType, 50);
-        t = ColonyPanel.getWorkPreview(carpenter, unit);
-        assertNotNull(t);
-        assertEquals("colonyPanel.preview.produce", t.getId());
+        p = ColonyPanel.getWorkPreview(carpenter, unit);
+        assertNotNull(p);
+        assertEquals("colonyPanel.preview.produce", p.main.getId());
+        assertNull(p.note);
 
-        // The colony center tile can not be worked
+        // Nothing to say about places with no room for workers at all
         assertNull(ColonyPanel.getWorkPreview(
             colony.getColonyTile(colony.getTile()), unit));
+        assertNull(ColonyPanel.getWorkPreview(colony.getBuilding(
+            spec().getBuildingType("model.building.chapel")), unit));
     }
 }
