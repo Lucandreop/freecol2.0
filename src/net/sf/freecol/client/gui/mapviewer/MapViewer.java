@@ -144,7 +144,12 @@ public final class MapViewer extends FreeColClientHolder {
      * Scaled image library to use only for map operations.
      */
     private final ImageLibrary lib;
-    
+
+    /**
+     * Rates tiles as colony sites when the colony site lens is on.
+     */
+    private final ColonySiteLens colonySiteLens = new ColonySiteLens();
+
     /**
      * Bounds of the tiles to be rendered. These bounds are scaled according to the
      * zoom level of the map.
@@ -662,6 +667,9 @@ public final class MapViewer extends FreeColClientHolder {
             paintEachTileWithExtendedImageSize(nonAnimationG2d, tcb, (tileG2d, tile) -> displayTerritorialBorders(tileG2d, tile, BorderType.COUNTRY, false));
         }
 
+        // Tint the tiles by their value as colony sites, below the units
+        displayColonySites(nonAnimationG2d, tcb, player, options);
+
         // Display units
         long transparentBordersMs = now();
         nonAnimationG2d.setColor(Color.BLACK);
@@ -846,6 +854,22 @@ public final class MapViewer extends FreeColClientHolder {
                 });
             }
         }
+    }
+
+    private void displayColonySites(Graphics2D nonAnimationG2d, TileClippingBounds tcb,
+            final Player player, final ClientOptions options) {
+        if (player == null || getFreeColClient().isMapEditor()
+                || !options.getBoolean(ClientOptions.DISPLAY_COLONY_SITES)) {
+            return;
+        }
+        paintEachTile(nonAnimationG2d, tcb, (tileG2d, tile) -> {
+            final Color color = colonySiteLens.getColor(player, tile);
+            if (color == null) {
+                return;
+            }
+            tileG2d.setColor(color);
+            tileG2d.fill(mapViewerScaledUtils.getFog());
+        });
     }
 
     private boolean shouldFogOfWarBeDisplayed(final Player player, final ClientOptions options) {

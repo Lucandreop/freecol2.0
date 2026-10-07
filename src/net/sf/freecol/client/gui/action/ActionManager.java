@@ -104,6 +104,7 @@ public class ActionManager extends OptionGroup {
         add(new DetermineHighSeasAction(freeColClient));
         add(new DisbandUnitAction(freeColClient));
         add(new DisplayBordersAction(freeColClient));
+        add(new DisplayColonySitesAction(freeColClient));
         add(new DisplayGridAction(freeColClient));
         add(new DisplayFogOfWarAction(freeColClient));
         for (DisplayText type : DisplayText.values()) {

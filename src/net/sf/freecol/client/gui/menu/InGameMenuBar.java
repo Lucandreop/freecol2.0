@@ -45,6 +45,7 @@ import net.sf.freecol.client.gui.action.ClearOrdersAction;
 import net.sf.freecol.client.gui.action.DeclareIndependenceAction;
 import net.sf.freecol.client.gui.action.DisbandUnitAction;
 import net.sf.freecol.client.gui.action.DisplayBordersAction;
+import net.sf.freecol.client.gui.action.DisplayColonySitesAction;
 import net.sf.freecol.client.gui.action.DisplayFogOfWarAction;
 import net.sf.freecol.client.gui.action.DisplayGridAction;
 import net.sf.freecol.client.gui.action.DisplayTileTextAction;
@@ -196,6 +197,7 @@ public class InGameMenuBar extends FreeColMenuBar {
         menu.add(getCheckBoxMenuItem(MapControlsAction.id));
         menu.add(getCheckBoxMenuItem(DisplayGridAction.id));
         menu.add(getCheckBoxMenuItem(DisplayBordersAction.id));
+        menu.add(getCheckBoxMenuItem(DisplayColonySitesAction.id));
         menu.add(getCheckBoxMenuItem(DisplayFogOfWarAction.id));
         menu.add(getMenuItem(ToggleViewModeAction.id));
         menu.add(getCheckBoxMenuItem(ChangeWindowedModeAction.id));

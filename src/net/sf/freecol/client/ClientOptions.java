@@ -229,6 +229,10 @@ public class ClientOptions extends OptionGroup {
     /** Whether to display borders by default or not. */
     public static final String DISPLAY_BORDERS
         = "model.option.displayBorders";
+
+    /** Whether to tint the map by the value of the tiles as colony sites. */
+    public static final String DISPLAY_COLONY_SITES
+        = "model.option.displayColonySites";
     
     /** Whether to draw the fog of war on the actual map or not. */
     public static final String DISPLAY_FOG_OF_WAR
