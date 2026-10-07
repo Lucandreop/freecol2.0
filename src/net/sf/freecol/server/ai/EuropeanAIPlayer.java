@@ -276,6 +276,9 @@ public class EuropeanAIPlayer extends MissionAIPlayer {
     /** Count of the number of transports needing a naval unit. */
     private int nNavalCarrier = 0;
 
+    /** The personality of this player, created when first needed. */
+    private AIPersonality personality = null;
+
 
     /**
      * Creates a new {@code EuropeanAIPlayer}.
@@ -1593,6 +1596,8 @@ public class EuropeanAIPlayer extends MissionAIPlayer {
         float prob = (float)Math.pow(peaceProb, n);
         // Apply Franklin's modifier
         prob = p.apply(prob, turn, Modifier.PEACE_TREATY);
+        // Aggressive players break treaties more readily
+        prob *= (float)getPersonality().getPeaceFactor();
         return prob > 0.0f
             && (randomInt(logger, "Peace holds?",  getAIRandom(), 100)
                 < (int)(100.0f * prob));
@@ -2280,8 +2285,50 @@ public class EuropeanAIPlayer extends MissionAIPlayer {
                 // their rebellious colonies.
                 : ((!other.getRebels().isEmpty()) ? Stance.PEACE
                     : super.determineStance(other)))
-            // Use normal stance determination for non-REF nations.
-            : super.determineStance(other);
+            // Let the personality decide for non-REF nations.
+            : determinePersonalStance(other);
+    }
+
+    /**
+     * Get the personality of this player.
+     *
+     * @return The {@code AIPersonality}.
+     */
+    public AIPersonality getPersonality() {
+        if (this.personality == null) {
+            this.personality = AIPersonality.create(getPlayer());
+            logger.info(getPlayer().getDebugName() + " personality "
+                + this.personality);
+        }
+        return this.personality;
+    }
+
+    /**
+     * Determine the stance towards another player, according to the
+     * tension as felt by this player's personality, and to whether a
+     * war looks winnable.
+     *
+     * Public for the test suite.
+     *
+     * @param other The other {@code Player}.
+     * @return The new {@code Stance}.
+     */
+    public Stance determinePersonalStance(Player other) {
+        final Player player = getPlayer();
+        final AIPersonality p = getPersonality();
+        final Stance stance = player.getStance(other);
+        final int felt = (int)Math.min(Tension.TENSION_MAX,
+            player.getTension(other).getValue() * p.getTensionFactor());
+        Stance result = stance.getStanceFromTension(new Tension(felt));
+        if (result == Stance.WAR && stance != Stance.WAR) {
+            // Do not start a war that does not look winnable
+            final double ours = player.calculateStrength(false);
+            final double theirs = other.calculateStrength(false);
+            final double share = (ours + theirs <= 0.0) ? 0.5
+                : ours / (ours + theirs);
+            if (share < p.getWarStrengthShare()) result = stance;
+        }
+        return result;
     }
 
     /**
@@ -2942,8 +2989,10 @@ public class EuropeanAIPlayer extends MissionAIPlayer {
     @Override
     public FoundingFather selectFoundingFather(List<FoundingFather> ffs) {
         final int age = getGame().getAge();
-        FoundingFather bestFather = null;
-        int bestWeight = Integer.MIN_VALUE;
+        final AIPersonality p = getPersonality();
+        List<FoundingFather> candidates = new ArrayList<>();
+        List<Double> weights = new ArrayList<>();
+        double total = 0.0;
         for (FoundingFather father : ffs) {
             if (father == null) continue;
 
@@ -2952,17 +3001,27 @@ public class EuropeanAIPlayer extends MissionAIPlayer {
             // early alleviates the complexity problem of handling all
             // TransportMissions correctly somewhat.
             if (father.hasAbility(Ability.BUILD_CUSTOM_HOUSE)) {
-                bestFather = father;
-                break;
+                return father;
             }
 
-            int weight = father.getWeight(age);
-            if (weight > bestWeight) {
-                bestWeight = weight;
-                bestFather = father;
-            }
+            // Otherwise choose at random, favouring the fathers that
+            // are good for the age and suit the personality, so that
+            // the choice is not always the same.
+            double weight = father.getWeight(age)
+                * p.getFatherBias(father.getType());
+            candidates.add(father);
+            weights.add(weight);
+            total += weight;
         }
-        return bestFather;
+        if (candidates.isEmpty()) return null;
+        if (total <= 0.0) return candidates.get(0);
+        double r = randomInt(logger, "Choose father", getAIRandom(), 1000)
+            * total / 1000.0;
+        for (int i = 0; i < candidates.size(); i++) {
+            r -= weights.get(i);
+            if (r < 0.0) return candidates.get(i);
+        }
+        return candidates.get(candidates.size() - 1);
     }
 
     /**
