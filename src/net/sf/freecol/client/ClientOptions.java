@@ -242,6 +242,10 @@ public class ClientOptions extends OptionGroup {
     public static final String GUI_SHOW_ADVISOR
         = "model.option.guiShowAdvisor";
 
+    /** Whether to show the agenda of the next few turns on the map. */
+    public static final String GUI_SHOW_AGENDA
+        = "model.option.guiShowAgenda";
+
     /** The advisor tips already shown, comma separated (hidden). */
     public static final String TUTORIAL_TIPS_SEEN
         = "model.option.tutorialTipsSeen";

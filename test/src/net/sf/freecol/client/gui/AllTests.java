@@ -32,6 +32,7 @@ public class AllTests {
         suite.addTestSuite(net.sf.freecol.client.gui.panel.WorkPreviewTest.class);
         suite.addTestSuite(net.sf.freecol.client.gui.panel.TownPlanTest.class);
         suite.addTestSuite(net.sf.freecol.client.gui.panel.ColonyStatusTest.class);
+        suite.addTestSuite(net.sf.freecol.client.gui.panel.AgendaTest.class);
         suite.addTestSuite(net.sf.freecol.client.gui.mapviewer.ColonySiteLensTest.class);
         suite.addTestSuite(net.sf.freecol.client.gui.dialog.PreCombatDialogTest.class);
         suite.addTestSuite(net.sf.freecol.client.gui.panel.ScoreChartTest.class);
