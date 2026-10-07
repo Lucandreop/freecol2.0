@@ -137,6 +137,21 @@ public class FatherDetailPanel
             .add(father.getId() + ".birthAndDeath")
             .addName("] ")
             .add(father.getId() + ".text");
+        final FoundingFather.Dilemma dilemma = father.getDilemma();
+        if (dilemma != null) {
+            template
+                .addName("\n\n")
+                .addStringTemplate(StringTemplate
+                    .template("model.foundingFather.dilemma.colopedia")
+                    .add("%proposal%", father.getId() + ".dilemma")
+                    .addStringTemplate("%cost%", StringTemplate
+                        .template(dilemma.getCost().getKey())
+                        .addAmount("%amount%", dilemma.getAmount())));
+            if (getMyPlayer().hasAcceptedDilemma(father)) {
+                template.addName(" ")
+                    .add("model.foundingFather.dilemma.accepted");
+            }
+        }
         final Turn turn = getMyPlayer().getElectionTurns().get(name);
         if (turn != null) {
             template

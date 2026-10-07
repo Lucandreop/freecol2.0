@@ -2805,6 +2805,29 @@ public final class InGameController extends Controller {
         return cs;
     }
 
+    /**
+     * Answer the bold proposal of a founding father.
+     *
+     * @param serverPlayer The {@code ServerPlayer} that is answering.
+     * @param father The {@code FoundingFather} that made the proposal.
+     * @param accept True if the proposal is accepted.
+     * @return A {@code ChangeSet} containing the response.
+     */
+    public ChangeSet fatherDilemma(ServerPlayer serverPlayer,
+                                   FoundingFather father, boolean accept) {
+        if (serverPlayer.getPendingDilemma() != father) {
+            return serverPlayer.clientError("No proposal pending from: "
+                + father.getId());
+        }
+        serverPlayer.setPendingDilemma(null);
+
+        ChangeSet cs = new ChangeSet();
+        if (accept && serverPlayer.canAffordDilemma(father)) {
+            serverPlayer.csAcceptDilemma(father, random, cs);
+        }
+        return cs;
+    }
+
 
     /**
      * Move a unit.
