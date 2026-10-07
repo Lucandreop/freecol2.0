@@ -2221,6 +2221,10 @@ public final class ColonyPanel extends PortPanel
      */
     public final class BuildingsPanel extends MigPanel {
 
+        /** A picture of the town, and the plan it was drawn from. */
+        private BufferedImage townImage = null;
+        private TownPlan townImagePlan = null;
+
         /** Always pop up the build queue when clicking on a building. */
         private final MouseAdapter buildQueueListener
             = new MouseAdapter() {
@@ -2248,35 +2252,25 @@ public final class ColonyPanel extends PortPanel
                 ? ((BuildingsLayoutManager)getLayout()).getPlan()
                 : null;
             if (plan != null && getColony() != null) {
-                // Draw the town the buildings stand in
-                final ImageLibrary lib = getImageLibrary();
-                final TileType tileType = getColony().getTile().getType();
-                final TileType plains
-                    = getSpecification().getTileType("model.tile.plains");
-                final BufferedImage land = lib.getTerrainImage(tileType,
-                    0, 0, lib.scale(TOWN_LAND_SIZE));
-                // Mix in some patchy plains grass, as the townsfolk
-                // wear the land down
-                final BufferedImage worn
-                    = (plains == null || plains == tileType) ? null
-                    : lib.getTerrainImage(plains, 0, 0,
-                                          lib.scale(TOWN_LAND_SIZE));
-                // Groves of the trees that grow round about
-                final TileType forest = (tileType.isForested()) ? tileType
-                    : getSpecification().getTileType("model.tile.mixedForest");
-                final BufferedImage trees = (forest == null) ? null
-                    : lib.getForestImage(forest, lib.scale(TOWN_LAND_SIZE));
-                TownPainter.paint((Graphics2D)g, getWidth(), getHeight(),
-                    plan, land, worn, trees, p ->
-                        (p.component instanceof ASingleBuildingPanel)
-                        ? lib.getScaledBuildingImage(
-                            ((ASingleBuildingPanel)p.component).getBuilding())
-                        : (p.empty) ? lib.getScaledBuildingEmptyLandImage()
-                        : null);
-                TownPainter.paintSigns((Graphics2D)g, plan, lib,
-                    FontLibrary.getScaledFont("simple-bold-tiny"),
-                    getWidth());
+                // The town only changes with its plan, so keep a picture
+                // of it rather than drawing it on every repaint
+                if (townImage == null || townImagePlan != plan
+                    || townImage.getWidth() != getWidth()
+                    || townImage.getHeight() != getHeight()) {
+                    townImage = new BufferedImage(getWidth(), getHeight(),
+                        BufferedImage.TYPE_INT_ARGB);
+                    townImagePlan = plan;
+                    final Graphics2D tg = townImage.createGraphics();
+                    try {
+                        paintTown(tg, plan);
+                    } finally {
+                        tg.dispose();
+                    }
+                }
+                g.drawImage(townImage, 0, 0, null);
             } else {
+                townImage = null;
+                townImagePlan = null;
                 super.paintComponent(g);
             }
             if (fullscreen && getColony() != null) {
@@ -2285,6 +2279,42 @@ public final class ColonyPanel extends PortPanel
                 g.drawImage(banner, (getWidth() - banner.getWidth()) / 2,
                             BANNER_MARGIN, null);
             }
+        }
+
+        /**
+         * Draw the town the buildings stand in.
+         *
+         * @param g The {@code Graphics2D} to draw with.
+         * @param plan The {@code TownPlan} of the town.
+         */
+        private void paintTown(Graphics2D g, TownPlan plan) {
+            final ImageLibrary lib = getImageLibrary();
+            final TileType tileType = getColony().getTile().getType();
+            final TileType plains
+                = getSpecification().getTileType("model.tile.plains");
+            final BufferedImage land = lib.getTerrainImage(tileType,
+                0, 0, lib.scale(TOWN_LAND_SIZE));
+            // Mix in some patchy plains grass, as the townsfolk
+            // wear the land down
+            final BufferedImage worn
+                = (plains == null || plains == tileType) ? null
+                : lib.getTerrainImage(plains, 0, 0,
+                                      lib.scale(TOWN_LAND_SIZE));
+            // Groves of the trees that grow round about
+            final TileType forest = (tileType.isForested()) ? tileType
+                : getSpecification().getTileType("model.tile.mixedForest");
+            final BufferedImage trees = (forest == null) ? null
+                : lib.getForestImage(forest, lib.scale(TOWN_LAND_SIZE));
+            TownPainter.paint(g, getWidth(), getHeight(),
+                plan, land, worn, trees, p ->
+                    (p.component instanceof ASingleBuildingPanel)
+                    ? lib.getScaledBuildingImage(
+                        ((ASingleBuildingPanel)p.component).getBuilding())
+                    : (p.empty) ? lib.getScaledBuildingEmptyLandImage()
+                    : null);
+            TownPainter.paintSigns(g, plan, lib,
+                FontLibrary.getScaledFont("simple-bold-tiny"),
+                getWidth());
         }
 
 
