@@ -20,6 +20,8 @@
 package net.sf.freecol.client.gui.panel;
 
 import static net.sf.freecol.common.util.CollectionUtils.dump;
+import static net.sf.freecol.common.util.CollectionUtils.first;
+import static net.sf.freecol.common.util.CollectionUtils.iterable;
 import static net.sf.freecol.common.util.CollectionUtils.sort;
 import static net.sf.freecol.common.util.CollectionUtils.transform;
 
@@ -111,9 +113,11 @@ import net.sf.freecol.common.model.Goods;
 import net.sf.freecol.common.model.GoodsType;
 import net.sf.freecol.common.model.ModelMessage;
 import net.sf.freecol.common.model.Nation;
+import net.sf.freecol.common.model.Occupation;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.Player.NoClaimReason;
 import net.sf.freecol.common.model.ProductionInfo;
+import net.sf.freecol.common.model.ProductionType;
 import net.sf.freecol.common.model.Specification;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Tile;
@@ -208,6 +212,9 @@ public final class ColonyPanel extends PortPanel
     private static final int BANNER_MARGIN = 6;
     
     private boolean fullscreen = false;
+
+    /** The colonist being dragged, whose possible work is previewed. */
+    private Unit previewUnit = null;
 
     // The action commands
 
@@ -708,6 +715,113 @@ public final class ColonyPanel extends PortPanel
             }
         }
         return colonyTitleImage;
+    }
+
+    /**
+     * Set the colonist being dragged, so that every building and tile
+     * shows what it would produce there.
+     *
+     * @param unit The {@code Unit} being dragged, or null when the drag
+     *     ends.
+     */
+    public void setPreviewUnit(Unit unit) {
+        this.previewUnit = (unit != null && unit.isPerson()) ? unit : null;
+        if (buildingsPanel != null) buildingsPanel.repaint();
+        if (tilesPanel != null) tilesPanel.repaint();
+    }
+
+    /**
+     * Describe what the dragged colonist would do at a work location.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param wl The {@code WorkLocation} to describe.
+     * @param unit The {@code Unit} being dragged.
+     * @return A template describing the work, or null if the unit could
+     *     not work there.
+     */
+    static StringTemplate getWorkPreview(WorkLocation wl, Unit unit) {
+        if (unit.getLocation() != wl) {
+            NoAddReason reason = wl.getNoAddReason(unit);
+            if (reason != NoAddReason.NONE
+                && reason != NoAddReason.ALREADY_PRESENT) return null;
+        }
+        // The school rules (checked above) decide who may teach
+        if (wl instanceof Building && ((Building)wl).canTeach()) {
+            return StringTemplate.key("colonyPanel.preview.teach");
+        }
+        final Occupation occupation = wl.getOccupation(unit, true);
+        GoodsType type = (occupation == null) ? null : occupation.workType;
+        ProductionType productionType = (occupation == null) ? null
+            : occupation.productionType;
+        // With no input to work on a building finds no occupation, but
+        // it is more helpful to say what it would make and what is missing
+        if (type == null && wl instanceof Building) {
+            for (ProductionType pt : ((Building)wl).getType()
+                     .getAvailableProductionTypes(false)) {
+                final AbstractGoods output = first(pt.getOutputs());
+                if (output != null) {
+                    type = output.getType();
+                    productionType = pt;
+                    break;
+                }
+            }
+        }
+        if (type == null) return null;
+        final int amount = wl.getPotentialProduction(type, unit.getType());
+        StringTemplate t = StringTemplate.template("colonyPanel.preview.produce")
+            .addAmount("%amount%", amount)
+            .addNamed("%goods%", type);
+        // Buildings turn goods into other goods: say if the input is missing
+        if (wl instanceof Building && productionType != null) {
+            final Colony colony = wl.getColony();
+            for (AbstractGoods input : iterable(productionType.getInputs())) {
+                final GoodsType in = input.getType();
+                if (colony.getGoodsCount(in) <= 0
+                    && colony.getNetProductionOf(in) <= 0) {
+                    return StringTemplate.template("colonyPanel.preview.missing")
+                        .addStringTemplate("%production%", t)
+                        .addNamed("%goods%", in);
+                }
+            }
+        }
+        return t;
+    }
+
+    /**
+     * Draw the work preview of the dragged colonist over a component.
+     *
+     * @param c The component (a building or tile) to draw over.
+     * @param g The {@code Graphics} to draw with.
+     * @param wl The {@code WorkLocation} the component shows.
+     */
+    private void paintWorkPreview(JComponent c, Graphics g, WorkLocation wl) {
+        final Unit unit = this.previewUnit;
+        if (unit == null || wl == null) return;
+        final StringTemplate t = getWorkPreview(wl, unit);
+        final String text = Messages.message((t == null)
+            ? StringTemplate.key("colonyPanel.preview.cannot") : t);
+        final Graphics2D g2d = (Graphics2D)g.create();
+        try {
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                 RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                 RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g2d.setFont(FontLibrary.getScaledFont("simple-bold-smaller"));
+            final FontMetrics fm = g2d.getFontMetrics();
+            final int pad = getImageLibrary().scaleInt(4);
+            final int w = Math.min(c.getWidth(), fm.stringWidth(text) + 2 * pad);
+            final int h = fm.getHeight() + pad;
+            final int x = (c.getWidth() - w) / 2;
+            final int y = Math.max(0, (c.getHeight() - h) / 2);
+            g2d.setColor((t == null) ? new Color(120, 20, 20, 215)
+                : new Color(20, 90, 20, 215));
+            g2d.fillRoundRect(x, y, w, h, h / 2, h / 2);
+            g2d.setColor(Color.WHITE);
+            g2d.drawString(text, x + pad, y + pad / 2 + fm.getAscent());
+        } finally {
+            g2d.dispose();
+        }
     }
 
     private void paintOutsideColonyBackground(Graphics2D g2d, BuildingType buildingType) {
@@ -2238,6 +2352,15 @@ public final class ColonyPanel extends PortPanel
                 setOpaque(false);
             }
 
+            /**
+             * {@inheritDoc}
+             */
+            @Override
+            public void paint(Graphics g) {
+                super.paint(g);
+                paintWorkPreview(this, g, getBuilding());
+            }
+
 
             /**
              * {@inheritDoc}
@@ -2560,6 +2683,17 @@ public final class ColonyPanel extends PortPanel
                 setSize(size);
                 setLocation(((2 - x) + y) * size.width / 2,
                     (x + y) * size.height / 2 + topOffset);
+            }
+
+            /**
+             * {@inheritDoc}
+             */
+            @Override
+            public void paint(Graphics g) {
+                super.paint(g);
+                if (!colonyTile.isColonyCenterTile()) {
+                    paintWorkPreview(this, g, colonyTile);
+                }
             }
 
 
