@@ -62,6 +62,13 @@ public class WorkPreviewTest extends FreeColTestCase {
         assertEquals("colonyPanel.preview.produce", p.main.getId());
         assertFalse(p.kind == ColonyPanel.WorkPreview.Kind.BAD);
 
+        // A tile not yet claimed still says what it would yield
+        field.getWorkTile().changeOwnership(null, null);
+        p = ColonyPanel.getWorkPreview(field, unit);
+        assertNotNull(p);
+        assertFalse(p.kind == ColonyPanel.WorkPreview.Kind.BAD);
+        assertEquals("colonyPanel.preview.produce", p.main.getId());
+
         // The carpenter needs lumber, which this colony lacks
         Building carpenter = colony.getBuilding(carpenterType);
         colony.removeGoods(lumberType, colony.getGoodsCount(lumberType));
