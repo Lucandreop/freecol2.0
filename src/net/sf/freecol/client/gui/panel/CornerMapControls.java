@@ -39,8 +39,10 @@ import javax.swing.SwingUtilities;
 import net.miginfocom.swing.MigLayout;
 import net.sf.freecol.client.ClientOptions;
 import net.sf.freecol.client.FreeColClient;
+import net.sf.freecol.client.gui.GUI;
 import net.sf.freecol.client.gui.ImageLibrary;
 import net.sf.freecol.common.model.Direction;
+import net.sf.freecol.common.model.Tile;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.resources.PropertyList;
 import net.sf.freecol.common.resources.ResourceManager;
@@ -77,6 +79,9 @@ public final class CornerMapControls extends MapControls {
 
     /** The mini map has its own panel. */
     private final JPanel miniMapPanel;
+
+    /** The agenda of what is coming up in the next few turns. */
+    private final AgendaPanel agendaPanel;
 
     /** A skin for the mini map. */
     private Image miniMapSkin;
@@ -118,6 +123,7 @@ public final class CornerMapControls extends MapControls {
                 }
             });
     
+        this.agendaPanel = new AgendaPanel(freeColClient);
         this.miniMapPanel = new MiniMapFreeColPanel(freeColClient);
         this.miniMapPanelSkin = new MiniMapPanelSkin();
         
@@ -236,6 +242,12 @@ public final class CornerMapControls extends MapControls {
                 ret.add(this.compassRose);
             }
             
+            if (showAgenda() && !this.agendaPanel.isShowing()) {
+                this.agendaPanel.refresh();
+                this.agendaPanel.setLocation(lib.scaleInt(8), lib.scaleInt(8));
+                ret.add(this.agendaPanel);
+            }
+
             ret.addAll(this.unitButtons.stream().filter(b -> !b.isShowing()).collect(Collectors.toList()));
     
             if (!this.unitButtons.isEmpty()) {
@@ -310,12 +322,40 @@ public final class CornerMapControls extends MapControls {
         final boolean rose = getClientOptions()
             .getBoolean(ClientOptions.DISPLAY_COMPASS_ROSE);
         if (rose && this.compassRose.isShowing()) ret.add(this.compassRose);
+        if (this.agendaPanel.isShowing()) ret.add(this.agendaPanel);
         for (UnitButton ub : this.unitButtons) {
             if (ub.isShowing()) ret.add(ub);
         }
         return ret;
     }
         
+    /**
+     * Should the agenda be shown?
+     *
+     * @return True if the agenda is wanted and there is a game to show
+     *     it for.
+     */
+    private boolean showAgenda() {
+        return getMyPlayer() != null
+            && getClientOptions().getBoolean(ClientOptions.GUI_SHOW_AGENDA);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void update(GUI.ViewMode viewMode, Unit active, Tile tile) {
+        super.update(viewMode, active, tile);
+        // Things move on as units move and turns end
+        if (this.agendaPanel.isShowing()) {
+            if (showAgenda()) {
+                this.agendaPanel.refresh();
+            } else {
+                this.agendaPanel.setSize(0, 0);
+            }
+        }
+    }
+
     private boolean isShowingOrIconified(JComponent panel) {
         final JInternalFrame f = (JInternalFrame) SwingUtilities.getAncestorOfClass(JInternalFrame.class, panel);
         if (f != null && f.isIcon()) {

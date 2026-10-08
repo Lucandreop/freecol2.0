@@ -217,6 +217,9 @@
         <!-- Show the advisor warnings about serious problems. -->
         <booleanOption id="model.option.guiShowAdvisor"
                        defaultValue="true"/>
+        <!-- Show the agenda of the next few turns on the map. -->
+        <booleanOption id="model.option.guiShowAgenda"
+                       defaultValue="true"/>
         <booleanOption id="model.option.guiShowUnitAdded"
                        defaultValue="true"/>
         <booleanOption id="model.option.guiShowUnitArrived"
