@@ -223,6 +223,9 @@ public class Player extends FreeColGameObject implements Nameable {
     /** The current score of this player. */
     protected int score;
 
+    /** The objectives whose rewards were given, a bit per objective. */
+    protected int objectivesRewarded = 0;
+
     /** The amount of gold this player owns. */
     protected int gold;
 
@@ -1097,6 +1100,25 @@ public class Player extends FreeColGameObject implements Nameable {
      *
      * @return The score.
      */
+    /**
+     * Has the reward for an objective been given?
+     *
+     * @param objective The {@code Objective} to check.
+     * @return True if the reward was given.
+     */
+    public boolean hasObjectiveReward(Objective objective) {
+        return (this.objectivesRewarded & (1 << objective.ordinal())) != 0;
+    }
+
+    /**
+     * Note that the reward for an objective has been given.
+     *
+     * @param objective The {@code Objective} rewarded.
+     */
+    public void addObjectiveReward(Objective objective) {
+        this.objectivesRewarded |= 1 << objective.ordinal();
+    }
+
     public int getScore() {
         return score;
     }
@@ -4244,6 +4266,7 @@ public class Player extends FreeColGameObject implements Nameable {
         this.attackedByPrivateers = o.getAttackedByPrivateers();
         this.bankrupt = o.getBankrupt();
         this.score = o.getScore();
+        this.objectivesRewarded = o.objectivesRewarded;
         this.gold = o.getGold();
         this.immigration = o.getImmigration();
         this.immigrationRequired = o.getImmigrationRequired();
@@ -4304,6 +4327,7 @@ public class Player extends FreeColGameObject implements Nameable {
     private static final String INDEPENDENT_NATION_NAME_TAG = "independentNationName";
     private static final String INTERVENTION_BELLS_TAG = "interventionBells";
     private static final String NATION_ID_TAG = "nationId";
+    private static final String OBJECTIVES_REWARDED_TAG = "objectivesRewarded";
     private static final String NATIVE_TRUST_TAG = "nativeTrust";
     private static final String NATION_TYPE_TAG = "nationType";
     private static final String NEW_LAND_NAME_TAG = "newLandName";
@@ -4369,6 +4393,10 @@ public class Player extends FreeColGameObject implements Nameable {
             xw.writeAttribute(OLD_SOL_TAG, oldSoL);
 
             xw.writeAttribute(SCORE_TAG, score);
+
+            if (objectivesRewarded != 0) {
+                xw.writeAttribute(OBJECTIVES_REWARDED_TAG, objectivesRewarded);
+            }
 
             if (entryTile != null) {
                 xw.writeAttribute(ENTRY_LOCATION_TAG, entryTile);
@@ -4545,6 +4573,8 @@ public class Player extends FreeColGameObject implements Nameable {
         oldSoL = xr.getAttribute(OLD_SOL_TAG, 0);
 
         score = xr.getAttribute(SCORE_TAG, 0);
+
+        objectivesRewarded = xr.getAttribute(OBJECTIVES_REWARDED_TAG, 0);
 
         ready = xr.getAttribute(READY_TAG, false);
 

@@ -58,8 +58,6 @@ import net.sf.freecol.common.model.Unit;
  *
  * - gives short tips, at most one a turn, the first time something
  *   becomes relevant, and never twice;
- * - tracks a list of first objectives, and congratulates the player
- *   when one is reached;
  * - warns about serious problems the game does not already warn
  *   about (an undefended colony with enemies close, too many
  *   royalists, colonists stuck on the docks), which is useful even
@@ -111,75 +109,12 @@ public final class Advisor {
         }
     }
 
-    /** The first objectives, in the order they are usually reached. */
-    public static enum Objective {
-        FOUND_COLONY(Player::getSettlementCount, 1),
-        MEET_NATIVES(p -> (int)count(p.getGame().getLiveNativePlayers(),
-                                     n -> n.hasContacted(p)), 1),
-        SELL_IN_EUROPE(Advisor::countGoodsSold, 1),
-        THREE_COLONIES(Player::getSettlementCount, 3),
-        FIRST_FATHER(Player::getFatherCount, 1),
-        TEN_COLONISTS(p -> sum(p.getColonyList(), Colony::getUnitCount), 10),
-        HALF_REBELS(p -> max(p.getColonyList(), Colony::getSonsOfLiberty), 50),
-        INDEPENDENCE(p -> (p.isColonial()) ? 0 : 1, 1);
-
-        private final ToIntFunction<Player> progress;
-        private final int target;
-
-        Objective(ToIntFunction<Player> progress, int target) {
-            this.progress = progress;
-            this.target = target;
-        }
-
-        /**
-         * Get the progress of a player towards this objective.
-         *
-         * @param player The {@code Player} to check.
-         * @return The progress, capped at the target.
-         */
-        public int getProgress(Player player) {
-            return Math.min(this.target, this.progress.applyAsInt(player));
-        }
-
-        public int getTarget() {
-            return this.target;
-        }
-
-        public boolean isComplete(Player player) {
-            return getProgress(player) >= this.target;
-        }
-
-        public String getKey() {
-            return "tutorial.objective." + getEnumKey(this);
-        }
-    }
-
-
     /** The game the state below belongs to. */
     private UUID gameId = null;
 
-    /** The objectives already complete, or null before the first check. */
-    private Set<Objective> completed = null;
-
-    /** The turn each warning was last given, by warning key. */
+/** The turn each warning was last given, by warning key. */
     private final Map<String, Integer> warned = new HashMap<>();
 
-
-    /**
-     * Count the kinds of goods a player has sold in Europe.
-     *
-     * @param player The {@code Player} to check.
-     * @return The number of goods types with sales.
-     */
-    private static int countGoodsSold(Player player) {
-        final Market market = player.getMarket();
-        if (market == null) return 0;
-        int n = 0;
-        for (GoodsType type : player.getSpecification().getGoodsTypeList()) {
-            if (market.getSales(type) > 0) n++;
-        }
-        return n;
-    }
 
     /**
      * Get the next tip to give.
@@ -278,7 +213,6 @@ public final class Advisor {
         final UUID id = player.getGame().getUUID();
         if (!id.equals(this.gameId)) {
             this.gameId = id;
-            this.completed = null;
             this.warned.clear();
         }
         final int turn = player.getGame().getTurn().getNumber();
@@ -297,20 +231,6 @@ public final class Advisor {
                 }
             }
 
-            Set<Objective> done = EnumSet.noneOf(Objective.class);
-            for (Objective o : Objective.values()) {
-                if (o.isComplete(player)) done.add(o);
-            }
-            if (this.completed != null) {
-                for (Objective o : done) {
-                    if (this.completed.contains(o)) continue;
-                    player.addModelMessage(new ModelMessage(
-                            MessageType.TUTORIAL,
-                            "tutorial.objective.done", player)
-                        .add("%objective%", o.getKey() + ".name"));
-                }
-            }
-            this.completed = done;
         }
 
         if (options.getBoolean(ClientOptions.GUI_SHOW_ADVISOR)) {

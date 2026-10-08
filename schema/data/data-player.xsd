@@ -149,6 +149,8 @@
       <xs:attribute name="interventionBells" type="xs:int" use="optional"/>
       <xs:attribute name="oldSoL" type="xs:int" use="optional" default="0"/>
       <xs:attribute name="score" type="xs:int" use="optional" default="0"/>
+      <xs:attribute name="objectivesRewarded" type="xs:int" use="optional"
+                    default="0"/>
       <xs:attribute name="ready" type="xs:boolean" use="optional"
                     default="false"/>
       <xs:attribute name="ai" type="xs:boolean" use="optional" default="false"/>
