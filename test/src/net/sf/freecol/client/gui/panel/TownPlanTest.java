@@ -79,7 +79,8 @@ public class TownPlanTest extends FreeColTestCase {
         final Dimension size = new Dimension(1200, 730);
         final Dimension banner = new Dimension(314, 114);
         final List<Plot> plots = makePlots();
-        final TownPlan plan = TownPlan.create(size, banner, plots, 18, 33);
+        final TownPlan plan = TownPlan.create(size, banner, plots, 18, 33,
+                                              90);
         assertNotNull("The town fits", plan);
 
         final Rectangle area = new Rectangle(size);
@@ -115,11 +116,21 @@ public class TownPlanTest extends FreeColTestCase {
                      hall.bounds.x + hall.bounds.width / 2, 1);
         assertTrue(plan.getSquare().y >= hall.bounds.y + hall.bounds.height);
         assertTrue(plan.getRoad() >= 18 && plan.getRoad() <= 33);
+
+        // The land beyond the town lies behind all its buildings, and
+        // the back street under the top row
+        assertTrue(plan.getFarTop() >= 0);
+        assertTrue(plan.getMeadow() > plan.getFarTop());
+        assertEquals(plan.getStreets().get(0).y, plan.getBack());
+        for (Plot p : plan.getPlots()) {
+            assertTrue(p.type.getSuffix() + " below the far top",
+                       p.bounds.y >= plan.getFarTop());
+        }
     }
 
     public void testNoRoom() {
         assertNull("A small area is left to the fallback layout",
                    TownPlan.create(new Dimension(600, 400), null,
-                                   makePlots(), 18, 33));
+                                   makePlots(), 18, 33, 90));
     }
 }

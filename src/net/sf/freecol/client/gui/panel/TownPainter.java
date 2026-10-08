@@ -27,10 +27,12 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
+import java.awt.LinearGradientPaint;
 import java.awt.RadialGradientPaint;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.Stroke;
 import java.awt.TexturePaint;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Area;
@@ -143,6 +145,35 @@ public final class TownPainter {
     }
 
 
+    /** What the town looks like, besides its plan. */
+    public static final class Scene {
+
+        /** A terrain image (an isometric tile) of the land, or null. */
+        public BufferedImage land = null;
+
+        /** A terrain image of worn grass to blend in, or null. */
+        public BufferedImage worn = null;
+
+        /** A picture of the ground (see {@link TownArt}), or null. */
+        public BufferedImage ground = null;
+
+        /** A picture of a stand of trees, or null. */
+        public BufferedImage trees = null;
+
+        /** Gets the picture standing on a site, to cast its shadow. */
+        public Function<TownPlan.Plot, BufferedImage> pictures = null;
+
+        /** The kind of country around the town (see {@link TownArt}). */
+        public String biome = TownArt.TEMPERATE;
+
+        /**
+         * How well the town is defended: 0 not at all, 1 by a stockade,
+         * 2 by a fort, 3 by a fortress.
+         */
+        public int defence = 0;
+    }
+
+
     private TownPainter() {} // Static only
 
     /**
@@ -152,19 +183,10 @@ public final class TownPainter {
      * @param width The width of the town.
      * @param height The height of the town.
      * @param plan The {@code TownPlan} to paint.
-     * @param land A terrain image (an isometric tile) of the land the
-     *     town stands on, or null to use a plain colour.
-     * @param worn A terrain image of worn, patchy grass to blend into
-     *     the land, or null for none.
-     * @param trees A picture of a stand of trees for the groves, or
-     *     null for none.
-     * @param pictures Gets the picture standing on a site, to cast its
-     *     shadow, or null for no shadows.
+     * @param scene The {@code Scene} of the town.
      */
     public static void paint(Graphics2D g, int width, int height,
-                             TownPlan plan, BufferedImage land,
-                             BufferedImage worn, BufferedImage trees,
-                             Function<TownPlan.Plot, BufferedImage> pictures) {
+                             TownPlan plan, Scene scene) {
         final int road = plan.getRoad();
         final View view = new View(width, height);
         final Graphics2D g2d = (Graphics2D)g.create();
@@ -173,38 +195,58 @@ public final class TownPainter {
                                  RenderingHints.VALUE_ANTIALIAS_ON);
             g2d.setRenderingHint(RenderingHints.KEY_RENDERING,
                                  RenderingHints.VALUE_RENDER_QUALITY);
-            paintLand(g2d, width, height, land, worn);
-            paintWear(g2d, width, height, road);
-            paintFields(g2d, view, width, plan, road, trees);
+            final BufferedImage tree = TownArt.get(
+                (TownArt.COLD.equals(scene.biome)) ? "tree_conifer"
+                : "tree_broadleaf");
+            paintLand(g2d, width, height, scene, road);
+            paintBackdrop(g2d, width, plan, scene);
+            paintWear(g2d, width, height, road, plan.getMeadow());
+            paintFields(g2d, view, width, plan, road, scene.trees, tree);
             paintYards(g2d, view, plan, road);
-            if (trees != null) paintLaneTrees(g2d, plan, road, trees);
+            if (scene.trees != null || tree != null) {
+                paintLaneTrees(g2d, plan, road, scene.trees, tree);
+            }
             paintStreets(g2d, view, plan, road);
             if (plan.getSquare() != null) {
                 paintSquare(g2d, view, plan.getSquare(), road);
             }
-            paintShadows(g2d, plan, pictures);
+            // The wall runs behind the top row, so every building is
+            // inside the town
+            if (scene.defence > 0) {
+                paintWall(g2d, width, plan.getMeadow() + road * 0.15f,
+                          width / 2f, road, scene.defence);
+            }
+            paintShadows(g2d, plan, scene.pictures);
             paintDepth(g2d, width, height);
         } finally {
             g2d.dispose();
         }
     }
 
-    /**
+/**
      * Cover the town with the land it stands on.
      *
      * @param g The {@code Graphics2D} to paint with.
      * @param width The width of the town.
      * @param height The height of the town.
-     * @param land The terrain image, or null.
-     * @param worn The worn grass image, or null.
+     * @param scene The {@code Scene} of the town.
+     * @param road The width of a street, to size the ground picture.
      */
     private static void paintLand(Graphics2D g, int width, int height,
-                                  BufferedImage land, BufferedImage worn) {
+                                  Scene scene, int road) {
         g.setColor(new Color(110, 116, 60));
         g.fillRect(0, 0, width, height);
-        if (land != null) layLand(g, width, height, land, 1f);
-        // The grass of a town is trodden down and patchy.
-        if (worn != null) layLand(g, width, height, worn, 0.55f);
+        if (scene.ground != null) {
+            layTexture(g, width, height, scene.ground, road * 10);
+        } else {
+            if (scene.land != null) {
+                layLand(g, width, height, scene.land, 1f);
+            }
+            // The grass of a town is trodden down and patchy.
+            if (scene.worn != null) {
+                layLand(g, width, height, scene.worn, 0.55f);
+            }
+        }
         // Tone the land down a little so the buildings stand out.
         g.setColor(new Color(40, 30, 10, 50));
         g.fillRect(0, 0, width, height);
@@ -255,17 +297,18 @@ public final class TownPainter {
      * @param width The width of the town.
      * @param height The height of the town.
      * @param road The width of a street.
+     * @param top The y coordinate where the town starts.
      */
     private static void paintWear(Graphics2D g, int width, int height,
-                                  int road) {
+                                  int road, int top) {
         final Random random = new Random(1607);
-        final int count = width * height / (road * road * 10);
+        final int count = width * (height - top) / (road * road * 10);
         final Color earth = new Color(120, 92, 56, 90);
         final Color clear = new Color(120, 92, 56, 0);
         for (int i = 0; i < count; i++) {
             final float r = road * (0.8f + random.nextFloat() * 1.8f);
             final float cx = random.nextFloat() * width;
-            final float cy = random.nextFloat() * height;
+            final float cy = top + random.nextFloat() * (height - top);
             final Graphics2D g2d = (Graphics2D)g.create();
             try {
                 // Flattened, as the land is seen from an angle
@@ -292,10 +335,12 @@ public final class TownPainter {
     private static void paintYards(Graphics2D g, View view, TownPlan plan,
                                    int road) {
         final BufferedImage dirt = getDirtTexture(road);
+        final Rectangle dirtTile = new Rectangle(0, 0, 4 * road, 4 * road);
         for (TownPlan.Plot p : plan.getPlots()) {
             if (p.bounds == null) continue;
             final float base = p.bounds.y + p.bounds.height;
-            final float h = p.bounds.height - road * 0.2f;
+            final float h = Math.min(p.bounds.height - road * 0.2f,
+                                     base - plan.getMeadow());
             final float x = p.bounds.x - road * 0.25f;
             final float w = p.bounds.width + road * 0.5f;
             final float y = base - h;
@@ -313,23 +358,29 @@ public final class TownPainter {
             final Composite oldComposite = g.getComposite();
             g.setComposite(AlphaComposite.getInstance(
                     AlphaComposite.SRC_OVER, 0.45f));
-            g.setPaint(new TexturePaint(dirt, new Rectangle(0, 0,
-                        dirt.getWidth(), dirt.getHeight())));
+            g.setPaint(new TexturePaint(dirt, dirtTile));
             g.fill(yard);
             g.setComposite(AlphaComposite.getInstance(
                     AlphaComposite.SRC_OVER, 0.5f));
             g.fill(view.quad(x, x + w, base - road * 1.6f,
                              base + road * 0.3f));
             g.setComposite(oldComposite);
-            // Fence along the back and the sides
+            // A fence along the back and the sides: rails round the
+            // workshops, trimmed hedges round the public buildings
             final float inset = road * 0.2f;
             final float fy = y + road * 0.35f;
             final float fb = base - road * 0.2f;
             final float l = x + inset, r = x + w - inset;
-            paintFence(g, view.x(l, fb, fy), fy, view.x(r, fb, fy), fy,
-                       road);
-            paintFence(g, view.x(l, fb, fy), fy, l, fb, road);
-            paintFence(g, view.x(r, fb, fy), fy, r, fb, road);
+            final float tl = view.x(l, fb, fy), tr = view.x(r, fb, fy);
+            if (p.getDistrict() == TownPlan.District.CRAFT) {
+                paintFence(g, tl, fy, tr, fy, road);
+                paintFence(g, tl, fy, l, fb, road);
+                paintFence(g, tr, fy, r, fb, road);
+            } else {
+                paintHedge(g, tl, fy, tr, fy, road);
+                paintHedge(g, tl, fy, l, fb, road);
+                paintHedge(g, tr, fy, r, fb, road);
+            }
         }
     }
 
@@ -343,10 +394,11 @@ public final class TownPainter {
      * @param plan The {@code TownPlan} with the buildings.
      * @param road The width of a street.
      * @param trees A picture of a stand of trees, or null.
+     * @param tree A picture of a single tree, or null.
      */
     private static void paintFields(Graphics2D g, View view, int width,
                                     TownPlan plan, int road,
-                                    BufferedImage trees) {
+                                    BufferedImage trees, BufferedImage tree) {
         final List<Rectangle> obstacles = new ArrayList<>();
         for (TownPlan.Plot p : plan.getPlots()) {
             if (p.bounds != null) obstacles.add(p.bounds);
@@ -356,12 +408,13 @@ public final class TownPainter {
         if (plan.getReserved() != null) obstacles.add(plan.getReserved());
 
         final int margin = road / 2;
-        int top = 0, kind = 0;
+        int top = plan.getFarTop(), kind = 0;
         for (Rectangle street : plan.getStreets()) {
             final int bottom = street.y;
-            final int fieldTop = top + road / 2;
+            final int fieldTop = Math.max(top + road / 2,
+                                          plan.getMeadow() + road / 4);
             final int fieldBottom = bottom - road / 3;
-            if (fieldBottom - fieldTop >= 2 * road) {
+            if (fieldBottom - fieldTop >= road * 1.3f) {
                 // Find the stretches of the row free of anything else
                 final List<int[]> taken = new ArrayList<>();
                 for (Rectangle o : obstacles) {
@@ -376,14 +429,14 @@ public final class TownPainter {
                     if (t[0] - x >= 3 * road) {
                         paintField(g, view, new Rectangle(x, fieldTop,
                             t[0] - x, fieldBottom - fieldTop), road,
-                            kind++, trees);
+                            kind++, trees, tree);
                     }
                     x = Math.max(x, t[1]);
                 }
                 if (width - margin - x >= 3 * road) {
                     paintField(g, view, new Rectangle(x, fieldTop,
                         width - margin - x, fieldBottom - fieldTop),
-                        road, kind++, trees);
+                        road, kind++, trees, tree);
                 }
             }
             top = street.y + street.height;
@@ -399,12 +452,13 @@ public final class TownPainter {
      * @param road The width of a street, to size the furrows.
      * @param kind Which kind of field to paint.
      * @param trees A picture of a stand of trees, or null.
+     * @param tree A picture of a single tree, or null.
      */
     private static void paintField(Graphics2D g, View view, Rectangle r,
                                    int road, int kind,
-                                   BufferedImage trees) {
-        if (trees != null && kind % 3 == 1) {
-            paintGrove(g, r, trees);
+                                   BufferedImage trees, BufferedImage tree) {
+        if ((trees != null || tree != null) && kind % 3 == 1) {
+            paintGrove(g, r, trees, tree);
             return;
         }
         final Color[] crops = {
@@ -412,7 +466,11 @@ public final class TownPainter {
             new Color(196, 170, 70),  // wheat
             new Color(52, 104, 40),   // tobacco
         };
+        final String[] cropArt = {
+            "field_vegetables", "field_wheat", "field_tobacco"
+        };
         final Color crop = crops[(kind / 2) % crops.length];
+        final BufferedImage art = TownArt.get(cropArt[(kind / 2) % crops.length]);
         final Random random = new Random(r.x * 31 + r.y);
         final float base = r.y + r.height;
         final Shape field = view.quad(r.x, r.x + r.width, r.y, base);
@@ -421,10 +479,17 @@ public final class TownPainter {
         g.fill(field);
         final Shape oldClip = g.getClip();
         g.clip(field);
+        if (art != null) {
+            final int tw = road * 8;
+            g.setPaint(new TexturePaint(art, new Rectangle(r.x, r.y, tw,
+                Math.max(1, tw * art.getHeight() / art.getWidth()))));
+            g.fill(field);
+        }
         // Furrows across the field, with the crop growing along them
         final float row = Math.max(4f, road * 0.3f);
         final float dot = Math.max(2f, road * 0.16f);
         for (float y = r.y + row / 2; y < r.y + r.height; y += row) {
+            if (art != null) break;
             g.setColor(new Color(80, 56, 32));
             g.fill(new Rectangle.Float(r.x, y + row * 0.25f, r.width,
                                        row * 0.25f));
@@ -462,10 +527,13 @@ public final class TownPainter {
      * @param g The {@code Graphics2D} to paint with.
      * @param plan The {@code TownPlan} with the buildings.
      * @param road The width of a street.
-     * @param trees A picture of a stand of trees.
+     * @param trees A picture of a stand of trees, or null.
+     * @param tree A picture of a single tree, used if there is one.
      */
     private static void paintLaneTrees(Graphics2D g, TownPlan plan,
-                                       int road, BufferedImage trees) {
+                                       int road, BufferedImage trees,
+                                       BufferedImage tree) {
+        final BufferedImage art = (tree != null) ? tree : trees;
         final List<TownPlan.Plot> placed = new ArrayList<>();
         for (TownPlan.Plot p : plan.getPlots()) {
             if (p.bounds != null) placed.add(p);
@@ -490,16 +558,588 @@ public final class TownPainter {
                 final int left = p.bounds.x + p.bounds.width + road / 4;
                 final int gap = next.bounds.x - road / 4 - left;
                 if (gap < road * 0.6f) continue;
-                final int tw = Math.min(Math.round(gap * 1.5f), road * 3);
-                final int th = tw * trees.getHeight() / trees.getWidth();
+                final int tw = (tree != null)
+                    ? Math.min(Math.round(gap * 2.2f), road * 3)
+                    : Math.min(Math.round(gap * 1.5f), road * 3);
+                final int th = tw * art.getHeight() / art.getWidth();
                 final int depth = Math.min(p.bounds.height,
                                            next.bounds.height);
                 final int y = base - Math.round(depth * 0.55f) - th / 2;
-                g2d.drawImage(trees, left + gap / 2 - tw / 2, y, tw, th,
+                g2d.drawImage(art, left + gap / 2 - tw / 2, y, tw, th,
                               null);
             }
         } finally {
             g2d.dispose();
+        }
+    }
+
+    /**
+     * Lay a seamless picture over the town.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param width The width of the area.
+     * @param height The height of the area.
+     * @param img The seamless picture.
+     * @param tileWidth How wide one copy of the picture is drawn.
+     */
+    private static void layTexture(Graphics2D g, int width, int height,
+                                   BufferedImage img, int tileWidth) {
+        final int tileHeight = Math.max(1,
+            tileWidth * img.getHeight() / img.getWidth());
+        g.setPaint(new TexturePaint(img, new Rectangle(0, 0, tileWidth,
+                                                       tileHeight)));
+        g.fillRect(0, 0, width, height);
+    }
+
+    /**
+     * Paint the land beyond the town, out to the horizon, in the band
+     * above the back of the town.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param width The width of the town.
+     * @param plan The {@code TownPlan} of the town.
+     * @param scene The {@code Scene} of the town.
+     */
+    private static void paintBackdrop(Graphics2D g, int width, TownPlan plan,
+                                      Scene scene) {
+        final int back = plan.getMeadow();
+        final int road = plan.getRoad();
+        if (back < road) return;
+        final float horizon = back * 0.5f;
+        final BufferedImage art = TownArt.get("sky_" + scene.biome);
+        if (art != null) {
+            // The horizon of the picture is about 40% of the way down
+            final int h = Math.round(art.getHeight() * (float)width
+                                     / art.getWidth());
+            paintFaded(g, art, Math.round(horizon - h * 0.40f), width, h,
+                       back - road, back + road / 3);
+        } else {
+            paintSky(g, width, horizon, scene.biome);
+            paintHills(g, width, horizon, back, road, scene);
+        }
+        // A track from the town out towards the horizon
+        final float cx = width / 2f;
+        final float far = horizon + (back - horizon) * 0.25f;
+        final Path2D track = new Path2D.Float();
+        track.moveTo(cx - road * 0.45f, back + road * 0.2f);
+        track.curveTo(cx - road * 0.4f, back - (back - far) * 0.5f,
+                      cx + road * 0.3f, far + (back - far) * 0.3f,
+                      cx + 1.5f, far);
+        track.lineTo(cx + 3f, far);
+        track.curveTo(cx + road * 0.4f, far + (back - far) * 0.3f,
+                      cx + road * 0.45f, back - (back - far) * 0.5f,
+                      cx + road * 0.45f, back + road * 0.2f);
+        track.closePath();
+        g.setPaint(new GradientPaint(0, far, new Color(150, 116, 74, 40),
+                0, back, new Color(150, 116, 74, 230)));
+        g.fill(track);
+    }
+
+    /**
+     * Draw a picture with its bottom fading away.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param img The picture.
+     * @param y The y coordinate of the top of the picture.
+     * @param width The width to draw the picture at.
+     * @param height The height to draw the picture at.
+     * @param fadeTop The y coordinate where the fading starts.
+     * @param fadeBottom The y coordinate where it has faded away.
+     */
+    private static void paintFaded(Graphics2D g, BufferedImage img, int y,
+                                   int width, int height, int fadeTop,
+                                   int fadeBottom) {
+        if (fadeBottom <= 0 || width <= 0) return;
+        final BufferedImage tmp = new BufferedImage(width, fadeBottom,
+                                                    BufferedImage.TYPE_INT_ARGB);
+        final Graphics2D tg = tmp.createGraphics();
+        try {
+            tg.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            tg.drawImage(img, 0, y, width, height, null);
+            tg.setComposite(AlphaComposite.DstIn);
+            tg.setPaint(new GradientPaint(0, fadeTop, Color.BLACK,
+                    0, fadeBottom, new Color(0, 0, 0, 0)));
+            tg.fillRect(0, Math.max(0, fadeTop), width,
+                        fadeBottom - Math.max(0, fadeTop));
+        } finally {
+            tg.dispose();
+        }
+        g.drawImage(tmp, 0, 0, null);
+    }
+
+    /**
+     * The colours of the sky over a kind of country: at the top and at
+     * the horizon.
+     *
+     * @param biome The kind of country.
+     * @return The two colours.
+     */
+    private static Color[] skyColours(String biome) {
+        switch (biome) {
+        case TownArt.ARID:
+            return new Color[] { new Color(140, 165, 200),
+                                 new Color(238, 226, 198) };
+        case TownArt.COLD:
+            return new Color[] { new Color(132, 152, 178),
+                                 new Color(222, 228, 234) };
+        case TownArt.TROPICAL:
+            return new Color[] { new Color(96, 156, 206),
+                                 new Color(222, 234, 228) };
+        default:
+            return new Color[] { new Color(112, 150, 198),
+                                 new Color(220, 228, 230) };
+        }
+    }
+
+    /**
+     * The colours of the hills of a kind of country: far, middle and
+     * near.
+     *
+     * @param biome The kind of country.
+     * @return The three colours.
+     */
+    private static Color[] hillColours(String biome) {
+        switch (biome) {
+        case TownArt.ARID:
+            return new Color[] { new Color(184, 170, 140),
+                                 new Color(170, 150, 98),
+                                 new Color(158, 140, 82) };
+        case TownArt.COLD:
+            return new Color[] { new Color(168, 180, 192),
+                                 new Color(120, 140, 132),
+                                 new Color(104, 126, 98) };
+        case TownArt.TROPICAL:
+            return new Color[] { new Color(140, 172, 150),
+                                 new Color(84, 132, 72),
+                                 new Color(74, 122, 56) };
+        default:
+            return new Color[] { new Color(150, 172, 166),
+                                 new Color(116, 146, 98),
+                                 new Color(104, 136, 76) };
+        }
+    }
+
+    /**
+     * Paint the sky, with a few clouds.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param width The width of the town.
+     * @param horizon The y coordinate of the horizon.
+     * @param biome The kind of country.
+     */
+    private static void paintSky(Graphics2D g, int width, float horizon,
+                                 String biome) {
+        final Color[] sky = skyColours(biome);
+        g.setPaint(new GradientPaint(0, 0, sky[0], 0, horizon, sky[1]));
+        g.fill(new Rectangle.Float(0, 0, width, horizon + 2));
+        final Random random = new Random(width);
+        final int clouds = Math.max(2, width / 180);
+        for (int i = 0; i < clouds; i++) {
+            final float cx = random.nextFloat() * width;
+            final float cy = horizon * (0.15f + random.nextFloat() * 0.5f);
+            final float size = horizon * (0.18f + random.nextFloat() * 0.18f);
+            for (int j = 0; j < 4; j++) {
+                final float dx = (random.nextFloat() - 0.5f) * size * 2.2f;
+                final float dy = (random.nextFloat() - 0.5f) * size * 0.35f;
+                final float r = size * (0.5f + random.nextFloat() * 0.5f);
+                g.setPaint(new RadialGradientPaint(cx + dx, cy + dy, r,
+                        new float[] { 0f, 1f },
+                        new Color[] { new Color(255, 255, 255, 120),
+                                      new Color(255, 255, 255, 0) }));
+                g.fill(new Ellipse2D.Float(cx + dx - r, cy + dy - r * 0.45f,
+                                           2 * r, r * 0.9f));
+            }
+        }
+    }
+
+    /**
+     * Paint rolling hills between the horizon and the back of the
+     * town, the nearer ones dotted with trees, fading into the land of
+     * the town and into the haze of the distance.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param width The width of the town.
+     * @param horizon The y coordinate of the horizon.
+     * @param back The y coordinate of the back of the town.
+     * @param road The width of a street.
+     * @param scene The {@code Scene} of the town.
+     */
+    private static void paintHills(Graphics2D g, int width, float horizon,
+                                   int back, int road, Scene scene) {
+        final Color[] hills = hillColours(scene.biome);
+        final Color haze = skyColours(scene.biome)[1];
+        final Random random = new Random(width * 7L + back);
+        final float depth = back - horizon;
+        final float[] tops = { 0f, 0.22f, 0.45f };
+        final float[] amps = { 0.32f, 0.26f, 0.2f };
+        for (int layer = 0; layer < 3; layer++) {
+            final float baseY = horizon + depth * tops[layer];
+            final float amp = depth * amps[layer];
+            final double f1 = (2 + random.nextInt(3)) * Math.PI / width;
+            final double f2 = (5 + random.nextInt(5)) * Math.PI / width;
+            final double p1 = random.nextDouble() * 6, p2 = random.nextDouble() * 6;
+            final Path2D ridge = new Path2D.Float();
+            final List<float[]> crest = new ArrayList<>();
+            ridge.moveTo(-10, back + road);
+            for (int x = -10; x <= width + 10; x += 6) {
+                final double n = 0.6 * Math.sin(x * f1 + p1)
+                    + 0.4 * Math.sin(x * f2 + p2);
+                final float y = (float)(baseY - amp * (0.5 + 0.5 * n));
+                ridge.lineTo(x, y);
+                crest.add(new float[] { x, y });
+            }
+            ridge.lineTo(width + 10, back + road);
+            ridge.closePath();
+            final Color c = hills[layer];
+            final float top = baseY - amp;
+            if (back > top + 1) {
+                g.setPaint(new LinearGradientPaint(0, top, 0, back,
+                    new float[] { 0f, 0.7f, 1f },
+                    new Color[] { c.brighter(), c,
+                        new Color(c.getRed(), c.getGreen(), c.getBlue(), 0) }));
+                g.fill(ridge);
+            }
+            // Woods in clumps along the middle and near ridges
+            if (layer > 0) {
+                final float tw = road * (0.55f + layer * 0.45f);
+                int clump = 0;
+                for (int i = 0; i < crest.size(); i++) {
+                    if (clump == 0 && random.nextFloat() < 0.07f) {
+                        clump = 2 + random.nextInt(5);
+                    }
+                    if (clump <= 0) continue;
+                    clump--;
+                    final float[] p = crest.get(i);
+                    paintDistantTrees(g, null, p[0], p[1] + tw * 0.35f, tw,
+                                      random);
+                }
+            }
+            if (layer == 2) {
+                final int lone = Math.max(1, width / 260);
+                for (int i = 0; i < lone; i++) {
+                    final float x = random.nextFloat() * width;
+                    final float y = baseY + (back - baseY) * (0.2f
+                        + random.nextFloat() * 0.5f);
+                    paintLoneTree(g, x, y, road * (0.8f
+                        + random.nextFloat() * 0.4f), random);
+                }
+            }
+            // The farther away, the hazier
+            if (layer < 2) {
+                g.setPaint(new GradientPaint(0, horizon,
+                        new Color(haze.getRed(), haze.getGreen(),
+                                  haze.getBlue(), (layer == 0) ? 150 : 80),
+                        0, back, new Color(haze.getRed(), haze.getGreen(),
+                                           haze.getBlue(), 0)));
+                g.fill(ridge);
+            }
+        }
+    }
+
+    /**
+     * Paint a single tree standing out in the open.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param x The x coordinate of the foot of the tree.
+     * @param y The y coordinate of the foot of the tree.
+     * @param size The height of the tree.
+     * @param random A source of randomness.
+     */
+    private static void paintLoneTree(Graphics2D g, float x, float y,
+                                      float size, Random random) {
+        g.setColor(new Color(0, 0, 0, 50));
+        g.fill(new Ellipse2D.Float(x - size * 0.2f, y - size * 0.06f,
+                                   size * 0.7f, size * 0.14f));
+        g.setColor(new Color(84, 62, 40));
+        g.fill(new Rectangle.Float(x - size * 0.04f, y - size * 0.45f,
+                                   size * 0.08f, size * 0.45f));
+        final float cy = y - size * 0.62f;
+        final float r = size * 0.32f;
+        g.setColor(new Color(46, 74, 34));
+        g.fill(new Ellipse2D.Float(x - r * 1.1f, cy - r * 0.8f, r * 2.2f,
+                                   r * 1.8f));
+        g.setColor(new Color(70, 102, 46));
+        g.fill(new Ellipse2D.Float(x - r * 0.95f, cy - r, r * 1.6f,
+                                   r * 1.4f));
+        g.setColor(new Color(104, 136, 64, 210));
+        g.fill(new Ellipse2D.Float(x - r * 0.7f, cy - r * 0.9f, r * 0.8f,
+                                   r * 0.6f));
+    }
+
+    /**
+     * Paint a clump of distant trees.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param trees A picture of a stand of trees, or null.
+     * @param x The x coordinate of the middle of the clump.
+     * @param y The y coordinate of the foot of the clump.
+     * @param width The width of the clump.
+     * @param random A source of randomness.
+     */
+    private static void paintDistantTrees(Graphics2D g, BufferedImage trees,
+                                          float x, float y, float width,
+                                          Random random) {
+        if (trees != null) {
+            final int w = Math.round(width);
+            final int h = w * trees.getHeight() / trees.getWidth();
+            g.drawImage(trees, Math.round(x - w / 2f), Math.round(y - h), w,
+                        h, null);
+            return;
+        }
+        for (int i = 0; i < 3; i++) {
+            final float r = width * (0.22f + random.nextFloat() * 0.14f);
+            final float dx = (random.nextFloat() - 0.5f) * width * 0.5f;
+            final int shade = random.nextInt(18);
+            g.setColor(new Color(40 + shade, 64 + shade, 34 + shade / 2));
+            g.fill(new Ellipse2D.Float(x + dx - r, y - r * 2.1f, 2 * r,
+                                       r * 2.1f));
+            g.setColor(new Color(66 + shade, 92 + shade, 46, 170));
+            g.fill(new Ellipse2D.Float(x + dx - r * 0.7f, y - r * 2f,
+                                       r * 1.1f, r * 0.9f));
+        }
+    }
+
+    /**
+     * Paint the wall of the town: a stockade, a fort or a fortress,
+     * with a gate where the avenue leaves the town.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param width The width of the town.
+     * @param base The y coordinate the wall stands on.
+     * @param gateX The x coordinate of the middle of the gate.
+     * @param road The width of a street.
+     * @param defence How well the town is defended, from 1 to 3.
+     */
+    private static void paintWall(Graphics2D g, int width, float base,
+                                  float gateX, int road, int defence) {
+        final float gate = road * 1.5f;
+        // A shadow at the foot of the wall
+        g.setColor(new Color(30, 20, 10, 60));
+        g.fill(new Rectangle.Float(0, base - road * 0.05f, width,
+                                   road * 0.22f));
+        paintWallSection(g, 0, gateX - gate / 2, base, road, defence);
+        paintWallSection(g, gateX + gate / 2, width, base, road, defence);
+        // The gate is flanked by posts, or by towers in a fort
+        for (float side : new float[] { -1f, 1f }) {
+            final float x = gateX + side * gate / 2;
+            if (defence == 1) {
+                final float w = road * 0.42f, h = road * 1.65f;
+                paintLog(g, x - w / 2, base, w, h);
+            } else {
+                paintTower(g, x, base, road, defence);
+            }
+        }
+    }
+
+    /**
+     * Paint a straight section of wall.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param x0 The x coordinate of the left end.
+     * @param x1 The x coordinate of the right end.
+     * @param base The y coordinate the wall stands on.
+     * @param road The width of a street.
+     * @param defence How well the town is defended, from 1 to 3.
+     */
+    private static void paintWallSection(Graphics2D g, float x0, float x1,
+                                         float base, int road, int defence) {
+        if (x1 <= x0) return;
+        final Shape oldClip = g.getClip();
+        g.clip(new Rectangle.Float(x0, base - road * 3, x1 - x0, road * 4));
+        try {
+            if (defence >= 3) {
+                paintStoneWall(g, x0, x1, base, road * 1.5f, road);
+                return;
+            }
+            float foot = base;
+            if (defence == 2) {
+                // A fort stands its logs on a footing of stone
+                final float sh = road * 0.5f;
+                paintStoneWall(g, x0, x1, base, sh, road);
+                foot = base - sh * 0.85f;
+            }
+            final float h = road * 1.35f;
+            final BufferedImage art = TownArt.get("palisade");
+            if (art != null) {
+                final int th = Math.round(h * 1.15f);
+                final int tw = th * art.getWidth() / art.getHeight();
+                for (float x = x0; x < x1; x += tw) {
+                    g.drawImage(art, Math.round(x), Math.round(foot - th),
+                                tw, th, null);
+                }
+                return;
+            }
+            final float lw = Math.max(3f, road * 0.3f);
+            final Random random = new Random(Math.round(x0 * 13 + base));
+            for (float x = x0; x < x1; x += lw) {
+                paintLog(g, x, foot, lw, h * (0.9f + random.nextFloat() * 0.14f));
+            }
+            // Bound together by two straps
+            g.setColor(new Color(64, 44, 26, 210));
+            for (float f : new float[] { 0.3f, 0.72f }) {
+                g.fill(new Rectangle.Float(x0, foot - h * f, x1 - x0,
+                                           Math.max(1.5f, road * 0.07f)));
+            }
+        } finally {
+            g.setClip(oldClip);
+        }
+    }
+
+    /**
+     * Paint one sharpened log of a stockade.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param x The x coordinate of its left side.
+     * @param base The y coordinate of its foot.
+     * @param w Its width.
+     * @param h Its height, to the tip.
+     */
+    private static void paintLog(Graphics2D g, float x, float base, float w,
+                                 float h) {
+        final Path2D log = new Path2D.Float();
+        log.moveTo(x, base);
+        log.lineTo(x, base - h + w * 0.7f);
+        log.lineTo(x + w / 2, base - h);
+        log.lineTo(x + w, base - h + w * 0.7f);
+        log.lineTo(x + w, base);
+        log.closePath();
+        // Lit from the left
+        g.setPaint(new GradientPaint(x, 0, new Color(168, 130, 86),
+                                     x + w, 0, new Color(96, 70, 44)));
+        g.fill(log);
+        g.setStroke(new BasicStroke(1f));
+        g.setColor(new Color(58, 40, 24, 170));
+        g.draw(log);
+    }
+
+    /**
+     * Paint a wall of dressed stone, with battlements if it is tall.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param x0 The x coordinate of the left end.
+     * @param x1 The x coordinate of the right end.
+     * @param base The y coordinate the wall stands on.
+     * @param h The height of the wall.
+     * @param road The width of a street.
+     */
+    private static void paintStoneWall(Graphics2D g, float x0, float x1,
+                                       float base, float h, int road) {
+        final boolean battlements = h > road;
+        final float merlon = road * 0.32f;
+        final float top = base - h;
+        g.setPaint(new GradientPaint(0, top, new Color(176, 170, 158),
+                                     0, base, new Color(120, 114, 104)));
+        g.fill(new Rectangle.Float(x0, top, x1 - x0, h));
+        if (battlements) {
+            for (float x = x0; x < x1; x += merlon * 2) {
+                g.fill(new Rectangle.Float(x, top - merlon * 0.9f, merlon,
+                                           merlon * 0.9f));
+            }
+        }
+        // Courses of stone
+        g.setStroke(new BasicStroke(Math.max(1f, road / 24f)));
+        g.setColor(new Color(92, 86, 78, 170));
+        final float course = Math.max(4f, road * 0.3f);
+        int row = 0;
+        for (float y = base - course; y > top; y -= course, row++) {
+            g.draw(new Line2D.Float(x0, y, x1, y));
+            final float offset = (row % 2 == 0) ? 0 : course;
+            for (float x = x0 + offset; x < x1; x += course * 2) {
+                g.draw(new Line2D.Float(x, y, x, y + course));
+            }
+        }
+        // Light along the top
+        g.setColor(new Color(235, 228, 212, 120));
+        g.fill(new Rectangle.Float(x0, top, x1 - x0, Math.max(1f, road / 16f)));
+    }
+
+    /**
+     * Paint a tower beside the gate of a fort or fortress.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param cx The x coordinate of the middle of the tower.
+     * @param base The y coordinate it stands on.
+     * @param road The width of a street.
+     * @param defence How well the town is defended, 2 or 3.
+     */
+    private static void paintTower(Graphics2D g, float cx, float base,
+                                   int road, int defence) {
+        final float w = road * 1.1f, h = road * 2.1f;
+        final float x = cx - w / 2;
+        if (defence >= 3) {
+            paintStoneWall(g, x, x + w, base, h, road);
+            return;
+        }
+        // A wooden blockhouse with a little roof on a stone footing
+        paintStoneWall(g, x, x + w, base, road * 0.5f, road);
+        final float foot = base - road * 0.45f;
+        final float lw = w / 4;
+        for (int i = 0; i < 4; i++) {
+            paintLog(g, x + i * lw, foot, lw, h * 0.8f);
+        }
+        final Path2D roof = new Path2D.Float();
+        roof.moveTo(x - road * 0.15f, foot - h * 0.72f);
+        roof.lineTo(cx, foot - h * 1.02f);
+        roof.lineTo(x + w + road * 0.15f, foot - h * 0.72f);
+        roof.closePath();
+        g.setPaint(new GradientPaint(cx, foot - h, new Color(132, 70, 42),
+                                     cx, foot - h * 0.72f, new Color(92, 48, 30)));
+        g.fill(roof);
+    }
+
+    /**
+     * Paint a trimmed hedge, either across or along the view.
+     *
+     * @param g The {@code Graphics2D} to paint with.
+     * @param x0 The x coordinate of the start of the hedge.
+     * @param y0 The y coordinate of the start of the hedge, at its foot.
+     * @param x1 The x coordinate of the end of the hedge.
+     * @param y1 The y coordinate of the end of the hedge.
+     * @param road The width of a street, to size the hedge.
+     */
+    private static void paintHedge(Graphics2D g, float x0, float y0,
+                                   float x1, float y1, int road) {
+        final float h = road * 0.36f;
+        final boolean across = Math.abs(x1 - x0) >= Math.abs(y1 - y0);
+        final BufferedImage art = TownArt.get("hedge");
+        if (across && art != null) {
+            final int th = Math.round(h * 1.3f);
+            final int tw = th * art.getWidth() / art.getHeight();
+            final Shape oldClip = g.getClip();
+            g.clip(new Rectangle.Float(Math.min(x0, x1), y0 - th * 2,
+                                       Math.abs(x1 - x0), th * 3));
+            for (float x = Math.min(x0, x1); x < Math.max(x0, x1); x += tw) {
+                g.drawImage(art, Math.round(x), Math.round(y0 - th), tw, th,
+                            null);
+            }
+            g.setClip(oldClip);
+            return;
+        }
+        // A row of small bushes, each dark below and lit on top
+        final Random random = new Random(Math.round(x0 * 7 + y0 * 3));
+        final float len = (float)Math.hypot(x1 - x0, y1 - y0);
+        final float r = Math.max(3f, road * 0.3f);
+        final int clumps = Math.max(1, Math.round(len / (r * 1.1f)));
+        g.setColor(new Color(30, 22, 10, 60));
+        g.setStroke(new BasicStroke(r * 1.2f, BasicStroke.CAP_ROUND,
+                                    BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(x0, y0, x1, y1));
+        for (int i = 0; i <= clumps; i++) {
+            final float t = (float)i / clumps;
+            final float px = x0 + (x1 - x0) * t;
+            final float py = y0 + (y1 - y0) * t - r * 0.9f;
+            final float rr = r * (0.85f + random.nextFloat() * 0.3f);
+            final int shade = random.nextInt(16);
+            g.setColor(new Color(44 + shade, 66 + shade, 30));
+            g.fill(new Ellipse2D.Float(px - rr, py - rr * 0.8f, 2 * rr,
+                                       rr * 1.8f));
+            g.setColor(new Color(70 + shade, 98 + shade, 44));
+            g.fill(new Ellipse2D.Float(px - rr * 0.8f, py - rr * 0.95f,
+                                       rr * 1.4f, rr * 1.2f));
+            g.setColor(new Color(108 + shade, 136 + shade, 64, 200));
+            g.fill(new Ellipse2D.Float(px - rr * 0.55f, py - rr * 0.85f,
+                                       rr * 0.7f, rr * 0.5f));
         }
     }
 
@@ -520,12 +1160,32 @@ public final class TownPainter {
         final float postW = Math.max(1.5f, road * 0.08f);
         final float rail = Math.max(1f, road * 0.05f);
         final boolean across = Math.abs(x1 - x0) >= Math.abs(y1 - y0);
-        g.setStroke(new BasicStroke(rail, BasicStroke.CAP_BUTT,
-                                    BasicStroke.JOIN_MITER));
-        g.setColor(new Color(150, 110, 64));
+        final BufferedImage art = (across) ? TownArt.get("fence_rail") : null;
+        if (art != null) {
+            final int th = Math.round(postH * 1.25f);
+            final int tw = th * art.getWidth() / art.getHeight();
+            final Shape oldClip = g.getClip();
+            g.clip(new Rectangle.Float(Math.min(x0, x1), y0 - th * 2,
+                                       Math.abs(x1 - x0), th * 3));
+            for (float x = Math.min(x0, x1); x < Math.max(x0, x1); x += tw) {
+                g.drawImage(art, Math.round(x), Math.round(y0 - th), tw, th,
+                            null);
+            }
+            g.setClip(oldClip);
+            return;
+        }
+        // Split rails, round in section: dark below, lit on top
         for (float f : (across) ? new float[] { 0.75f, 0.35f }
                                 : new float[] { 0.75f }) {
+            g.setStroke(new BasicStroke(rail * 1.7f, BasicStroke.CAP_BUTT,
+                                        BasicStroke.JOIN_MITER));
+            g.setColor(new Color(96, 66, 38));
             g.draw(new Line2D.Float(x0, y0 - postH * f, x1, y1 - postH * f));
+            g.setStroke(new BasicStroke(rail * 0.7f, BasicStroke.CAP_BUTT,
+                                        BasicStroke.JOIN_MITER));
+            g.setColor(new Color(176, 136, 86));
+            g.draw(new Line2D.Float(x0, y0 - postH * f - rail * 0.35f,
+                                    x1, y1 - postH * f - rail * 0.35f));
         }
         final float len = (float)Math.hypot(x1 - x0, y1 - y0);
         final float step = (across) ? road * 0.55f : road * 0.4f;
@@ -721,25 +1381,25 @@ public final class TownPainter {
     /**
      * Paint the land just outside the town, where the colonists who
      * are not working wait: the same land as the town, with the avenue
-     * running on down from the town to a road along the bottom.
+     * running on down from the town to a road along the bottom, and
+     * the front wall of the town if it has one.
      *
      * @param g The {@code Graphics2D} to paint with.
      * @param width The width of the land.
      * @param height The height of the land.
-     * @param land The terrain image, or null.
-     * @param worn The worn grass image, or null.
      * @param road The width of a street.
      * @param avenueX The x coordinate of the middle of the avenue.
+     * @param scene The {@code Scene} of the town, for its land and
+     *     defences.
      */
     public static void paintOutskirts(Graphics2D g, int width, int height,
-                                      BufferedImage land, BufferedImage worn,
-                                      int road, int avenueX) {
+                                      int road, int avenueX, Scene scene) {
         final Graphics2D g2d = (Graphics2D)g.create();
         try {
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                                  RenderingHints.VALUE_ANTIALIAS_ON);
-            paintLand(g2d, width, height, land, worn);
-            paintWear(g2d, width, height, road);
+            paintLand(g2d, width, height, scene, road);
+            paintWear(g2d, width, height, road, 0);
             // The colonists stand on the road, so it runs along the
             // bottom, where their feet are.
             final float roadY = height - road * 1.6f;
@@ -758,6 +1418,11 @@ public final class TownPainter {
             g2d.setPaint(new GradientPaint(0, 0, new Color(20, 12, 0, 70),
                     0, road * 0.8f, new Color(20, 12, 0, 0)));
             g2d.fillRect(0, 0, width, Math.round(road * 0.8f));
+            // The front wall of the town, with its gate on the avenue
+            if (scene.defence > 0) {
+                paintWall(g2d, width, road * 2.2f, avenueX, road,
+                          scene.defence);
+            }
             paintVignette(g2d, width, height);
         } finally {
             g2d.dispose();
@@ -789,6 +1454,8 @@ public final class TownPainter {
      * @return The texture.
      */
     private static synchronized BufferedImage getDirtTexture(int road) {
+        final BufferedImage art = TownArt.get("ground_dirt");
+        if (art != null) return art;
         if (dirtTexture != null && dirtTextureRoad == road) {
             return dirtTexture;
         }
@@ -880,11 +1547,18 @@ public final class TownPainter {
         // The cobbles.
         final Shape oldClip = g.getClip();
         g.clip(shape);
+        final BufferedImage cobbles = TownArt.get("ground_cobble");
+        if (cobbles != null) {
+            final int tw = road * 5;
+            g.setPaint(new TexturePaint(cobbles, new Rectangle(0, 0, tw,
+                Math.max(1, tw * cobbles.getHeight() / cobbles.getWidth()))));
+            g.fill(shape);
+        }
         final Random random = new Random(square.width * 31 + square.height);
         final int stone = Math.max(6, road / 3);
         final int rowH = stone * 3 / 4;
         for (int y = square.y - Math.round(step), row = 0;
-             y < square.y + square.height;
+             y < square.y + square.height && cobbles == null;
              y += rowH, row++) {
             final int offset = (row % 2 == 0) ? 0 : -stone / 2;
             for (int x = square.x + offset; x < square.x + square.width;
@@ -929,6 +1603,14 @@ public final class TownPainter {
      */
     private static void paintWell(Graphics2D g, float cx, float cy,
                                   int road) {
+        final BufferedImage art = TownArt.get("well");
+        if (art != null) {
+            final int aw = Math.round(road * 2.6f);
+            final int ah = aw * art.getHeight() / art.getWidth();
+            g.drawImage(art, Math.round(cx - aw / 2f),
+                        Math.round(cy + aw * 0.22f - ah), aw, ah, null);
+            return;
+        }
         final float w = road * 1.6f, h = w * 0.5f;
         // Shadow
         g.setColor(new Color(0, 0, 0, 60));
@@ -1260,12 +1942,15 @@ public final class TownPainter {
      *
      * @param g The {@code Graphics2D} to paint with.
      * @param r Where the grove stands.
-     * @param trees A picture of a stand of trees.
+     * @param stand A picture of a stand of trees, or null.
+     * @param tree A picture of a single tree, or null.
      */
     private static void paintGrove(Graphics2D g, Rectangle r,
-                                   BufferedImage trees) {
-        final float scale = Math.min(1f,
-            r.height * 1.25f / trees.getHeight());
+                                   BufferedImage stand, BufferedImage tree) {
+        // Single trees, if there is a picture of one, look best
+        final BufferedImage trees = (tree != null) ? tree : stand;
+        final float scale = Math.min(1f, r.height
+            * ((tree != null) ? 1.5f : 1.25f) / trees.getHeight());
         final int tw = Math.round(trees.getWidth() * scale);
         final int th = Math.round(trees.getHeight() * scale);
         if (tw <= 0 || th <= 0) return;

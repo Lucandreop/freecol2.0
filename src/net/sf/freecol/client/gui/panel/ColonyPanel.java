@@ -593,8 +593,11 @@ public final class ColonyPanel extends PortPanel
             paintOutsideColonyBackground(g2d, null);
         }
 
+        // The town draws its own walls
         for (Building defensiveBuilding : defensiveBuildings) {
-            paintOutsideColonyBackground(g2d, defensiveBuilding.getType());
+            if (townPlan == null) {
+                paintOutsideColonyBackground(g2d, defensiveBuilding.getType());
+            }
         }
         if (townPlan != null && outsideColonyPanel.getComponentCount() == 0) {
             final Graphics2D hint = (Graphics2D)g.create(
@@ -988,21 +991,49 @@ public final class ColonyPanel extends PortPanel
             final Rectangle a = avenue.get(avenue.size() - 1);
             avenueX = a.x + a.width / 2 + buildingsScroll.getX() - r.x;
         }
+        final TownPainter.Scene scene = getTownScene();
         final String key = r.width + "x" + r.height + "/" + avenueX
-            + "/" + plan.getRoad() + "/" + getColony().getTile().getType();
+            + "/" + plan.getRoad() + "/" + getColony().getTile().getType()
+            + "/" + scene.defence;
         if (outskirtsImage == null || !key.equals(outskirtsKey)) {
             outskirtsImage = new BufferedImage(r.width, r.height,
                                                BufferedImage.TYPE_INT_ARGB);
             final Graphics2D og = outskirtsImage.createGraphics();
             try {
                 TownPainter.paintOutskirts(og, r.width, r.height,
-                    getTownLand(), getTownWornLand(), plan.getRoad(), avenueX);
+                    plan.getRoad(), avenueX, scene);
             } finally {
                 og.dispose();
             }
             outskirtsKey = key;
         }
         g2d.drawImage(outskirtsImage, r.x, r.y, null);
+    }
+
+    /**
+     * Get what the town of the colony looks like: its land, the country
+     * round about and its defences.
+     *
+     * @return A new {@code TownPainter.Scene}.
+     */
+    private TownPainter.Scene getTownScene() {
+        final ImageLibrary lib = getImageLibrary();
+        final Colony colony = getColony();
+        final TileType tileType = colony.getTile().getType();
+        final TownPainter.Scene scene = new TownPainter.Scene();
+        scene.land = getTownLand();
+        scene.worn = getTownWornLand();
+        scene.ground = TownArt.getGround(tileType);
+        scene.biome = TownArt.getBiome(tileType);
+        // Groves of the trees that grow round about
+        final TileType forest = (tileType.isForested()) ? tileType
+            : getSpecification().getTileType("model.tile.mixedForest");
+        scene.trees = (forest == null) ? null
+            : lib.getForestImage(forest, lib.scale(TOWN_LAND_SIZE));
+        final Building stockade = colony.getStockade();
+        scene.defence = (stockade == null) ? 0
+            : Math.min(3, stockade.getType().getLevel());
+        return scene;
     }
 
     /**
@@ -2558,7 +2589,7 @@ public final class ColonyPanel extends PortPanel
         @Override
         protected void paintChildren(Graphics g) {
             super.paintChildren(g);
-            // Over the buildings, what the dragged colonist would do
+// Over the buildings, what the dragged colonist would do
             for (Component c : getComponents()) {
                 if (c instanceof ASingleBuildingPanel && c.isVisible()) {
                     paintWorkPreview(g, c.getBounds(),
@@ -2575,21 +2606,14 @@ public final class ColonyPanel extends PortPanel
          */
         private void paintTown(Graphics2D g, TownPlan plan) {
             final ImageLibrary lib = getImageLibrary();
-            final TileType tileType = getColony().getTile().getType();
-            final BufferedImage land = getTownLand();
-            final BufferedImage worn = getTownWornLand();
-            // Groves of the trees that grow round about
-            final TileType forest = (tileType.isForested()) ? tileType
-                : getSpecification().getTileType("model.tile.mixedForest");
-            final BufferedImage trees = (forest == null) ? null
-                : lib.getForestImage(forest, lib.scale(TOWN_LAND_SIZE));
-            TownPainter.paint(g, getWidth(), getHeight(),
-                plan, land, worn, trees, p ->
-                    (p.component instanceof ASingleBuildingPanel)
-                    ? lib.getScaledBuildingImage(
-                        ((ASingleBuildingPanel)p.component).getBuilding())
-                    : (p.empty) ? lib.getScaledBuildingEmptyLandImage()
-                    : null);
+            final TownPainter.Scene scene = getTownScene();
+            scene.pictures = p ->
+                (p.component instanceof ASingleBuildingPanel)
+                ? lib.getScaledBuildingImage(
+                    ((ASingleBuildingPanel)p.component).getBuilding())
+                : (p.empty) ? lib.getScaledBuildingEmptyLandImage()
+                : null;
+            TownPainter.paint(g, getWidth(), getHeight(), plan, scene);
             TownPainter.paintSigns(g, plan, lib,
                 FontLibrary.getScaledFont("simple-bold-tiny"),
                 getWidth());
@@ -2603,9 +2627,10 @@ public final class ColonyPanel extends PortPanel
             final Colony colony = getColony();
             if (colony == null) return;
             cleanup();
-            ((BuildingsLayoutManager)getLayout()).setRoadWidths(
+            ((BuildingsLayoutManager)getLayout()).setTownSizes(
                 getImageLibrary().scaleInt(12),
-                getImageLibrary().scaleInt(22));
+                getImageLibrary().scaleInt(22),
+                getImageLibrary().scaleInt(70));
             
             final List<BuildingType> allBuildableTypes = getSpecification().getBuildingTypeList().stream()
                     .filter(bt -> bt.getUpgradesFrom() == null)
