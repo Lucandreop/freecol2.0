@@ -23,6 +23,7 @@ import static net.sf.freecol.common.model.Constants.INFINITY;
 import static net.sf.freecol.common.model.Constants.STEAL_LAND;
 import static net.sf.freecol.common.util.CollectionUtils.allSame;
 import static net.sf.freecol.common.util.CollectionUtils.alwaysTrue;
+import static net.sf.freecol.common.util.CollectionUtils.any;
 import static net.sf.freecol.common.util.CollectionUtils.find;
 import static net.sf.freecol.common.util.CollectionUtils.none;
 import static net.sf.freecol.common.util.CollectionUtils.removeInPlace;
@@ -136,6 +137,9 @@ import net.sf.freecol.common.option.GameOptions;
 import net.sf.freecol.common.util.Introspector;
 import net.sf.freecol.common.util.LogBuilder;
 import net.sf.freecol.server.FreeColServer;
+import net.sf.freecol.common.model.pathfinding.CostDecider;
+import net.sf.freecol.common.model.pathfinding.CostDeciders;
+import net.sf.freecol.common.model.pathfinding.GoalDecider;
 
 
 /**
@@ -194,6 +198,13 @@ public final class InGameController extends FreeColClientHolder {
 
     /** The turn number dangerWarnedUnits applies to. */
     private int dangerWarnedTurn = -1;
+
+    /**
+     * Units exploring the map on their own, with the tile each is
+     * heading for.  A unit stops exploring when its destination is
+     * changed to anything else.
+     */
+    private final HashMap<Unit, Tile> explorers = new HashMap<>();
 
     /** The advisor helping the player learn the game. */
     private final Advisor advisor = new Advisor();
@@ -1181,8 +1192,11 @@ public final class InGameController extends FreeColClientHolder {
     private boolean moveToDestination(Unit unit, List<ModelMessage> messages) {
         final Player player = getMyPlayer();
         Location destination = unit.getDestination();
-        PathNode path;
+        PathNode path = null;
         boolean ret;
+        // Sent somewhere else since it set out to explore?
+        if (explorers.containsKey(unit)
+            && explorers.get(unit) != destination) explorers.remove(unit);
         if (!requireOurTurn()
             || unit.isAtSea()
             || unit.getMovesLeft() <= 0
@@ -1194,7 +1208,14 @@ public final class InGameController extends FreeColClientHolder {
             ret = true; // also invalid, but trade route check needed first
         } else if (!changeState(unit, UnitState.ACTIVE)) {
             ret = true; // another error case
-        } else if ((path = unit.findPath(destination)) == null) {
+        } else if (explorers.containsKey(unit)
+            && (path = unit.findPath(unit.getLocation(), destination, null,
+                    exploreCostDecider(unit), null)) == null) {
+            // The way is blocked, for now.  Try again next turn.
+            changeState(unit, UnitState.SKIPPED);
+            ret = true;
+        } else if (!explorers.containsKey(unit)
+            && (path = unit.findPath(destination)) == null) {
             // No path to destination. Give the player a chance to do
             // something about it, but default to skipping this unit as
             // the path blockage is most likely just transient
@@ -1218,6 +1239,9 @@ public final class InGameController extends FreeColClientHolder {
              * to the player (or we get an error message).
              */
             return true;
+        } else if (unit.isAtLocation(destination)
+            && explorers.containsKey(unit)) {
+            ret = continueExploring(unit);
         } else if (unit.isAtLocation(destination)) {
             final Colony colony = (unit.hasTile()) ? unit.getTile().getColony()
                 : null;
@@ -1360,6 +1384,187 @@ public final class InGameController extends FreeColClientHolder {
             }
         }
         return null;
+    }
+
+    /**
+     * Send a unit to explore the map on its own, turn after turn,
+     * until there is nothing left within its reach.
+     *
+     * Called from ExploreAction.
+     *
+     * @param unit The {@code Unit} to explore with.
+     * @return True if the unit set out.
+     */
+    public boolean explore(Unit unit) {
+        if (unit == null || !getMyPlayer().owns(unit) || !unit.hasTile()
+            || unit.isOnCarrier() || !requireOurTurn()
+            || !getGUI().confirmClearTradeRoute(unit)) return false;
+
+        final Tile target = findExploreTarget(unit);
+        if (target == null) {
+            showInformationPanel(unit, StringTemplate
+                .template("explore.nothing")
+                .addStringTemplate("%unit%",
+                    unit.getLabel(Unit.UnitLabelType.NATIONAL)));
+            return false;
+        }
+        final UnitWas unitWas = new UnitWas(unit);
+        explorers.put(unit, target);
+        if (!askSetDestination(unit, target)) {
+            explorers.remove(unit);
+            return false;
+        }
+        moveToDestination(unit, null);
+        fireChanges(unitWas);
+        updateGUI(null, false);
+        return true;
+    }
+
+    /**
+     * Send a ship to Europe, the quickest way to the high seas.
+     *
+     * Called from SailToEuropeAction.
+     *
+     * @param unit The naval {@code Unit} to send.
+     * @return True if the ship set out.
+     */
+    public boolean sailToEurope(Unit unit) {
+        final Europe europe = getMyPlayer().getEurope();
+        if (unit == null || europe == null || !unit.isNaval()
+            || !unit.hasTile() || !getMyPlayer().owns(unit)
+            || !requireOurTurn()
+            || !getGUI().confirmClearTradeRoute(unit)) return false;
+
+        explorers.remove(unit);
+        final UnitWas unitWas = new UnitWas(unit);
+        if (!askSetDestination(unit, europe)) return false;
+        moveToDestination(unit, null);
+        fireChanges(unitWas);
+        updateGUI(null, false);
+        return true;
+    }
+
+    /**
+     * An exploring unit has reached the tile it was heading for:
+     * find the next one, or finish.  A ship that has nothing left to
+     * explore sails back to Europe.
+     *
+     * @param unit The exploring {@code Unit}.
+     * @return True if the unit carries on by itself, false if the
+     *     player should give it new orders.
+     */
+    private boolean continueExploring(Unit unit) {
+        final Player player = getMyPlayer();
+        explorers.remove(unit);
+        final Tile next = findExploreTarget(unit);
+        if (next != null) {
+            explorers.put(unit, next);
+            if (!askSetDestination(unit, next)) {
+                explorers.remove(unit);
+                return false;
+            }
+            return unit.getMovesLeft() <= 0 || moveToDestination(unit, null);
+        }
+
+        final Europe europe = player.getEurope();
+        final boolean home = unit.isNaval() && europe != null
+            && player.canMoveToEurope() && unit.getType().canMoveToHighSeas();
+        final ModelMessage m = new ModelMessage(MessageType.DEFAULT,
+            (home) ? "explore.toEurope" : "explore.done", unit)
+            .addStringTemplate("%unit%",
+                unit.getLabel(Unit.UnitLabelType.NATIONAL));
+        player.addModelMessage(m);
+        turnReportMessages.add(m);
+        if (home && askSetDestination(unit, europe)) {
+            return unit.getMovesLeft() <= 0 || moveToDestination(unit, null);
+        }
+        askClearGotoOrders(unit);
+        return false;
+    }
+
+    /**
+     * Find the nearest tile from which a unit would see land or sea
+     * not yet explored, keeping clear of lost city rumours,
+     * settlements and foreign units.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param unit The {@code Unit} to explore with.
+     * @return The {@code Tile} to go to, or null if there is none.
+     */
+    static Tile findExploreTarget(Unit unit) {
+        final Tile here = unit.getTile();
+        if (here == null) return null;
+        final Player owner = unit.getOwner();
+        final int radius = Math.max(1, unit.getLineOfSight());
+        final GoalDecider gd = new GoalDecider() {
+                private PathNode best = null;
+
+                @Override
+                public PathNode getGoal() { return best; }
+                @Override
+                public boolean hasSubGoals() { return false; }
+                @Override
+                public boolean check(Unit u, PathNode path) {
+                    final Tile tile = path.getTile();
+                    // The goal is checked before the cost of reaching it
+                    if (tile == null || tile == here || path.isOnCarrier()
+                        || !isClearToExplore(owner, tile)
+                        || !any(tile.getSurroundingTiles(1, radius),
+                                t -> !owner.hasExplored(t))) return false;
+                    best = path;
+                    return true;
+                }
+            };
+        final PathNode path = unit.search(here, gd, exploreCostDecider(unit),
+                                          INFINITY, null);
+        return (path == null) ? null : path.getLastNode().getTile();
+    }
+
+    /**
+     * Can an exploring unit pass a tile without having to deal with
+     * anything there: a lost city rumour, a settlement that is not
+     * its owner's, or foreign units?
+     *
+     * @param owner The {@code Player} that owns the exploring unit.
+     * @param tile The {@code Tile} to check.
+     * @return True if the tile is clear.
+     */
+    private static boolean isClearToExplore(Player owner, Tile tile) {
+        return !tile.hasLostCityRumour()
+            && (!tile.hasSettlement() || owner.owns(tile.getSettlement()))
+            && none(tile.getUnitList(), u -> !owner.owns(u));
+    }
+
+    /**
+     * Get the costs of moving for an exploring unit, which keeps
+     * clear of anything it would have to deal with: lost city
+     * rumours, settlements that are not its owner's, and foreign
+     * units.
+     *
+     * @param unit The exploring {@code Unit}.
+     * @return A {@code CostDecider} for the unit.
+     */
+    private static CostDecider exploreCostDecider(final Unit unit) {
+        final CostDecider base = CostDeciders.defaultCostDeciderFor(unit);
+        final Player owner = unit.getOwner();
+        return new CostDecider() {
+            @Override
+            public int getCost(Unit u, Location oldLocation,
+                               Location newLocation, int movesLeft) {
+                final Tile tile = newLocation.getTile();
+                if (tile != null && !isClearToExplore(owner, tile)) {
+                    return ILLEGAL_MOVE;
+                }
+                return base.getCost(u, oldLocation, newLocation, movesLeft);
+            }
+
+            @Override
+            public int getMovesLeft() { return base.getMovesLeft(); }
+
+            @Override
+            public int getNewTurns() { return base.getNewTurns(); }
+        };
     }
 
     /**
@@ -1917,6 +2122,8 @@ public final class InGameController extends FreeColClientHolder {
                 return moveTowardEurope(unit, (Europe)stop.getLocation());
             } else if (unit.getDestination() instanceof Europe) {
                 return moveTowardEurope(unit, (Europe)unit.getDestination());
+            } else if (explorers.containsKey(unit)) {
+                return moveTile(unit, direction);
             } else if (getGUI().modalConfirmDialog(oldTile, StringTemplate
                     .template("highseas.text")
                     .addAmount("%number%", unit.getSailTurns()),

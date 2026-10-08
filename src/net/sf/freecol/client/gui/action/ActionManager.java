@@ -113,7 +113,8 @@ public class ActionManager extends OptionGroup {
         add(new EndTurnAction(freeColClient));
         add(new EuropeAction(freeColClient));
         add(new ExecuteGotoOrdersAction(freeColClient));
-        add(new FindSettlementAction(freeColClient));
+        add(new ExploreAction(freeColClient));
+add(new FindSettlementAction(freeColClient));
         add(new FortifyAction(freeColClient));
         add(new GotoAction(freeColClient));
         add(new GotoTileAction(freeColClient));
@@ -162,8 +163,9 @@ public class ActionManager extends OptionGroup {
         add(new ReportTradeAction(freeColClient));
         add(new ReportTurnAction(freeColClient));
         add(new RetireAction(freeColClient));
+        add(new SailToEuropeAction(freeColClient));
         add(new SaveAction(freeColClient));
-        add(new ScaleMapAction(freeColClient));
+add(new ScaleMapAction(freeColClient));
         add(new SentryAction(freeColClient));
         add(new ShowDifficultyAction(freeColClient));
         add(new ShowGameOptionsAction(freeColClient));
@@ -265,7 +267,9 @@ public class ActionManager extends OptionGroup {
         ret.add(new UnitButton(this, SkipUnitAction.id));
         ret.add(new UnitButton(this, SentryAction.id));
         ret.add(new UnitButton(this, FortifyAction.id));
-            
+        ret.add(new UnitButton(this, ExploreAction.id));
+        ret.add(new UnitButton(this, SailToEuropeAction.id));
+
         if (spec != null) {
             for (TileImprovementType ti : spec.getTileImprovementTypeList()) {
                 String id = ti.getSuffix() + "Action";

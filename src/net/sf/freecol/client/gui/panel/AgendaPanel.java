@@ -48,6 +48,8 @@ import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.client.ClientOptions;
+import javax.swing.ImageIcon;
+import java.awt.image.BufferedImage;
 
 
 /**
@@ -158,6 +160,33 @@ public final class AgendaPanel extends JPanel {
                     }
                 });
             add(goal);
+        }
+
+        // Europe, a click away, with the colonists waiting on its docks
+        final Europe europe = (player == null) ? null : player.getEurope();
+        if (europe != null && fold != Fold.NONE) {
+            final int waiting = (int)europe.getUnitList().stream()
+                .filter(u -> !u.isNaval()).count();
+            final int size = lib.scaleInt(20);
+            final BufferedImage ship = lib.getSizedImage(
+                "image.miscicon.button.normal.europe",
+                new Dimension(size, size));
+            add((ship == null) ? new JLabel() : new JLabel(new ImageIcon(ship)));
+            final JLabel link = new JLabel(Messages.message((waiting > 0)
+                ? StringTemplate.template("agenda.europe.docks")
+                    .addAmount("%number%", waiting)
+                : StringTemplate.key("agenda.europe")));
+            link.setFont((waiting > 0) ? bold : plain);
+            link.setForeground(INK);
+            link.setToolTipText(Messages.message("agenda.europe.tip"));
+            link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            link.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseClicked(MouseEvent e) {
+                        freeColClient.getGUI().showEuropePanel();
+                    }
+                });
+            add(link);
         }
 
         if (items.isEmpty() && fold != Fold.NONE) {
