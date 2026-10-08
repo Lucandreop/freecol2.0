@@ -26,6 +26,7 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
+import java.awt.Graphics2D;
 import java.awt.Graphics;
 import java.awt.Image;
 import java.awt.event.MouseAdapter;
@@ -88,7 +89,7 @@ public class ConstructionPanel extends MigPanel
     public ConstructionPanel(FreeColClient freeColClient,
                              Colony colony, boolean openBuildQueue) {
         super("ConstructionPanelUI",
-            new MigLayout("fill, ins 0 0 0 0, gapy 0, wrap 2", "push[]10[center]push", "[center]"));
+            new MigLayout("fill, ins 6 8 6 8, gapy 0, wrap 2", "push[]10[center]push", "[center]"));
 
         this.freeColClient = freeColClient;
         this.colony = colony;
@@ -159,7 +160,7 @@ public class ConstructionPanel extends MigPanel
             .getFixedImageLibrary();
         
         Font font = FontLibrary.getScaledFont("normal-plain-smaller", null);
-        Font fontTitle = FontLibrary.getScaledFont("normal-plain-smaller", null);
+        Font fontTitle = FontLibrary.getScaledFont("normal-bold-smaller", null);
         final int maxFontSize = lib.scaleInt(17);
         if (font.getSize() > maxFontSize) {
             font = font.deriveFont((float) maxFontSize);
@@ -335,11 +336,7 @@ public class ConstructionPanel extends MigPanel
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        
-        final Color oldColor = g.getColor();
-        g.setColor(new Color(0, 0, 0, 128));
-        final Dimension size = getSize();
-        g.fillRect(0, 0, size.width, size.height);
-        g.setColor(oldColor);
+        // A card in a wooden frame
+        ColonyPainter.paintCard((Graphics2D)g, getWidth(), getHeight());
     }
 }

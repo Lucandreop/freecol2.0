@@ -438,7 +438,7 @@ public final class ColonyPanel extends PortPanel
         cargoPanel.addMouseMotionListener(frameMoveDispatchListener);
 
         constructionPanel = new ConstructionPanel(freeColClient, colony, true);
-        constructionPanel.setForeground(Color.WHITE);
+        constructionPanel.setForeground(PortPainter.INK);
 
         inPortPanel = new ColonyInPortPanel();
         inPortScroll = new JScrollPane(inPortPanel,
@@ -537,23 +537,19 @@ public final class ColonyPanel extends PortPanel
         
         final Dimension size = getSize();
         
-        final BufferedImage colonyDocksBackground = getImageLibrary().getColonyDocksBackground();
-        if (colonyDocksBackground != null) {
-            final int docksBottomLeftX = inPortScroll.getX();
-            final int docksBottomLeftY = inPortScroll.getY() + inPortScroll.getHeight();
-            int y = docksBottomLeftY - colonyDocksBackground.getHeight();
-            g.drawImage(colonyDocksBackground, docksBottomLeftX, y, null);
-            
-            final BufferedImage colonyDocksSkyBackground = getImageLibrary().getColonyDocksSkyBackground();
-            if (colonyDocksSkyBackground != null) {
-                while (y > 0) {
-                    y -= colonyDocksSkyBackground.getHeight();
-                    g.drawImage(colonyDocksSkyBackground, docksBottomLeftX, y, null);
-                }
-            }
-            
+        // The sea of the port, its horizon just below the board
+        final BufferedImage upperRightBackground = getImageLibrary().getColonyUpperRightBackground();
+        final int portBottom = inPortScroll.getY() + inPortScroll.getHeight();
+        int horizon = inPortScroll.getY() + inPortScroll.getHeight() / 3;
+        if (upperRightBackground != null) {
+            horizon = Math.min(getInsets().top
+                + ColonyPainter.getBoardBottom(upperRightBackground)
+                + getImageLibrary().scaleInt(3),
+                portBottom - inPortScroll.getHeight() / 4);
         }
-        
+        ColonyPainter.paintSea(g2d, new Rectangle(inPortScroll.getX(), 0,
+                inPortScroll.getWidth(), portBottom), horizon);
+
         final Building docksBuilding = colony.getBuildings()
                 .stream()
                 .filter(b -> b.hasAbility(Ability.PRODUCE_IN_WATER))
@@ -616,30 +612,20 @@ public final class ColonyPanel extends PortPanel
             g.drawImage(unavailable, cargoHoldTopRightX, cargoHoldTopRightY, null);
         }
         
-        final BufferedImage upperRightBackground = getImageLibrary().getColonyUpperRightBackground();
         if (upperRightBackground != null) {
             final Insets insets = getInsets();
             int x = size.width - upperRightBackground.getWidth() - insets.right;
             int y = insets.top;
-            g.drawImage(upperRightBackground, x, y, null);
+            ColonyPainter.paintBoard(g2d, upperRightBackground, x, y);
             
-            Font numberFont = FontLibrary.getUnscaledFont(Utility.FONTSPEC_TITLE, "1").deriveFont((float) getImageLibrary().scaleInt(32));
-            final Font origFont = g.getFont();
-            g.setFont(numberFont);
-            
-            FontMetrics fm = g2d.getFontMetrics();
-            final String colonySize = "" + colony.getUnitCount();
-            double centerY = (fm.getAscent() - fm.getDescent() - fm.getLeading()) / 2;
-            
+            // The numbers are engraved in the octagons
+            final Font numberFont = FontLibrary.getUnscaledFont("normal-bold-tiny")
+                .deriveFont((float)getImageLibrary().scaleInt(32));
             final int colonySizeX = getImageLibrary().scaleInt(100);
             final int colonySizeY = getImageLibrary().scaleInt(40);
-            final double colonySizeCenterX = -fm.getStringBounds(colonySize, g2d).getWidth() / 2;
-            g.drawString(
-                colonySize,
-                (int) (x + colonySizeCenterX + colonySizeX),
-                (int) (y + centerY + colonySizeY)
-            );
-            
+            ColonyPainter.paintEngraved(g2d, String.valueOf(colony.getUnitCount()),
+                numberFont, x + colonySizeX, y + colonySizeY);
+
             final String bonus;
             final int grow = colony.getPreferredSizeChange();
             if (grow > 9) {
@@ -650,38 +636,20 @@ public final class ColonyPanel extends PortPanel
                 bonus = "" + grow;
             }
             final int colonyBonusX = getImageLibrary().scaleInt(404);
-            final double colonyBonusCenterX = -fm.getStringBounds(bonus, g2d).getWidth() / 2;
-            g.drawString(
-                    bonus,
-                    (int) (x + colonyBonusCenterX + colonyBonusX),
-                    (int) (y + centerY + colonySizeY)
-                );
-            
-            numberFont = numberFont.deriveFont((float) getImageLibrary().scaleInt(18));
-            g.setFont(numberFont);
-            fm = g2d.getFontMetrics();
-            centerY = (fm.getAscent() - fm.getDescent() - fm.getLeading()) / 2;
-            
-            final String rebelPercentage = colony.getSonsOfLiberty() + "%";
+            ColonyPainter.paintEngraved(g2d, bonus, numberFont,
+                x + colonyBonusX, y + colonySizeY);
+
+            final Font percentFont
+                = numberFont.deriveFont((float)getImageLibrary().scaleInt(18));
             final int rebelPercentageX = getImageLibrary().scaleInt(101);
             final int rebelPercentageY = getImageLibrary().scaleInt(193);
-            final double rebelPercentageCenterX = -fm.getStringBounds(rebelPercentage, g2d).getWidth() / 2;
-            g.drawString(
-                    rebelPercentage,
-                    (int) (x + rebelPercentageCenterX + rebelPercentageX),
-                    (int) (y + centerY + rebelPercentageY)
-                );
-            
-            final String royalistPercentage = (100 - colony.getSonsOfLiberty()) + "%";
             final int royalistPercentageX = getImageLibrary().scaleInt(407);
-            final double royalistPercentageCenterX = -fm.getStringBounds(royalistPercentage, g2d).getWidth() / 2;
-            g.drawString(
-                    royalistPercentage,
-                    (int) (x + royalistPercentageCenterX + royalistPercentageX),
-                    (int) (y + centerY + rebelPercentageY)
-                );
-            
-            
+            ColonyPainter.paintEngraved(g2d, colony.getSonsOfLiberty() + "%",
+                percentFont, x + rebelPercentageX, y + rebelPercentageY);
+            ColonyPainter.paintEngraved(g2d,
+                (100 - colony.getSonsOfLiberty()) + "%",
+                percentFont, x + royalistPercentageX, y + rebelPercentageY);
+
             // Name each number on a plate under its octagon
             final Font plateFont = FontLibrary.getScaledFont("simple-bold-tiny");
             final int plateWidth = getImageLibrary().scaleInt(84);
@@ -700,8 +668,6 @@ public final class ColonyPanel extends PortPanel
             TownPainter.paintSign(g2d, plateFont, x + royalistPercentageX,
                 lowerPlateY, plateWidth, plateHeight,
                 Messages.message("colonyPanel.octagon.royalists"), null, null);
-
-            g.setFont(origFont);
         }
         
         final BufferedImage nwBorder = getImageLibrary().getScaledImage("image.border.wooden.nw");
@@ -1702,9 +1668,10 @@ public final class ColonyPanel extends PortPanel
             new ImageIcon(getImageLibrary().getSmallGoodsTypeImage(type)),
             JLabel.LEFT);
         label.setFont(FontLibrary.getScaledFont("simple-bold-small"));
-        label.setForeground((amount > 0) ? new Color(214, 240, 170)
-            : (amount < 0) ? new Color(255, 160, 140)
-            : new Color(240, 225, 190));
+        // Written in ink on the parchment
+        label.setForeground((amount > 0) ? new Color(34, 92, 26)
+            : (amount < 0) ? new Color(156, 34, 22)
+            : PortPainter.INK);
         label.setToolTipText(Messages.message(StringTemplate
                 .template("colonyPanel.netTip")
                 .addName("%amount%", number)

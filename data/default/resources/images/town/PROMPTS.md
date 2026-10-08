@@ -234,6 +234,15 @@ Generate an image: a semi-realistic painterly illustration for a historical stra
 An old hand-drawn nautical map of the Atlantic Ocean on aged parchment, seen straight from above: the coasts of Europe and Africa on the right and of the Americas on the left drawn in faded brown ink, a compass rose, rhumb lines and a sea monster drawing. Faded and pale, so that small figures placed over it stay readable. No readable text, no labels, no border.
 ```
 
+### 33. `colony_sea.png`: o mar do porto da colônia
+Proporção **5:1** (faixa larga e baixa). Sem transparência.
+A água sob o quadro da colônia, onde os navios no porto ficam. Só o mar: o céu e a costa ao fundo são desenhados pelo jogo.
+
+```
+Generate an image: a semi-realistic painterly illustration for a historical strategy video game set in 17th-century colonial North America. Natural, warm, slightly desaturated colors, soft late-afternoon light coming from the upper left.
+A wide, low strip of calm deep blue-green sea seen from a little above, filling the whole image from edge to edge: gentle swell with soft white crests, lighter far away at the top edge and darker near the bottom. Only water: no sky, no shore, no ships, no people, no text, no border.
+```
+
 ---
 
 ## Depois de gerar
