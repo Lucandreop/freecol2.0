@@ -79,6 +79,9 @@ public class BuildingsLayoutManager implements LayoutManager {
     /** The greatest width of the town streets. */
     private int maxRoad = 0;
 
+    /** The greatest height of the land shown beyond the town. */
+    private int maxSky = 0;
+
     /** The town plan in use, or null if the buildings are scattered. */
     private TownPlan plan = null;
     
@@ -111,14 +114,17 @@ public class BuildingsLayoutManager implements LayoutManager {
     }
 
     /**
-     * Set the widths of the town streets, enabling the town layout.
+     * Set the sizes of the town, enabling the town layout.
      *
      * @param minRoad The least width of a street, zero to disable.
      * @param maxRoad The greatest width of a street.
+     * @param maxSky The greatest height of the land shown beyond the
+     *     town.
      */
-    public void setRoadWidths(int minRoad, int maxRoad) {
+    public void setTownSizes(int minRoad, int maxRoad, int maxSky) {
         this.minRoad = minRoad;
         this.maxRoad = maxRoad;
+        this.maxSky = maxSky;
     }
 
     /**
@@ -157,7 +163,8 @@ public class BuildingsLayoutManager implements LayoutManager {
             plots.add(new TownPlan.Plot(c, type, c.getMinimumSize(), empty,
                                         index++));
         }
-        return TownPlan.create(size, reservedTop, plots, minRoad, maxRoad);
+        return TownPlan.create(size, reservedTop, plots, minRoad, maxRoad,
+                               maxSky);
     }
 
     /**

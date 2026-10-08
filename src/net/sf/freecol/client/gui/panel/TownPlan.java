@@ -36,6 +36,10 @@ import net.sf.freecol.common.model.ProductionType;
 /**
  * Lays the buildings of a colony out as a small town.
  *
+ * The top row of buildings stands in front of the land beyond the town,
+ * which runs out to the horizon.  The wall of the town, once it has one,
+ * runs where the two meet, behind that row.
+ *
  * The buildings stand in rows, each row along a street that runs
  * across the town.  An avenue runs down the middle of the town: it
  * enters under the colony name at the top, leads to the town hall in
@@ -144,6 +148,12 @@ public final class TownPlan {
     /** The width of the streets. */
     private final int road;
 
+    /** The y coordinate of the top of the top row of buildings. */
+    private int farTop = 0;
+
+    /** The y coordinate of the first street, under the top row. */
+    private int back = 0;
+
 
     private TownPlan(List<Plot> plots, int road) {
         this.plots = plots;
@@ -172,6 +182,24 @@ public final class TownPlan {
 
     public int getRoad() {
         return this.road;
+    }
+
+    public int getFarTop() {
+        return this.farTop;
+    }
+
+    public int getBack() {
+        return this.back;
+    }
+
+    /**
+     * Get where the land beyond the town meets the ground of the town,
+     * part way down the top row of buildings.
+     *
+     * @return The y coordinate of the edge of the meadow.
+     */
+    public int getMeadow() {
+        return this.farTop + (this.back - this.farTop) * 55 / 100;
     }
 
     /**
@@ -209,17 +237,18 @@ public final class TownPlan {
      * @param plots The building sites to place.
      * @param minRoad The least width of a street.
      * @param maxRoad The greatest width of a street.
+     * @param maxSky The greatest height of the land beyond the town.
      * @return The town plan, or null if the sites do not fit.
      */
     public static TownPlan create(Dimension size, Dimension reservedTop,
                                   List<Plot> plots, int minRoad,
-                                  int maxRoad) {
+                                  int maxRoad, int maxSky) {
         if (plots.isEmpty() || size.width <= 0 || size.height <= 0) {
             return null;
         }
         for (int rows = 3; rows <= 5; rows++) {
             TownPlan plan = tryRows(size, reservedTop, plots, minRoad,
-                                    maxRoad, rows);
+                                    maxRoad, maxSky, rows);
             if (plan != null) return plan;
         }
         return null;
@@ -234,12 +263,13 @@ public final class TownPlan {
      * @param plots The building sites to place.
      * @param minRoad The least width of a street.
      * @param maxRoad The greatest width of a street.
+     * @param maxSky The greatest height of the land beyond the town.
      * @param n The number of rows, at least three.
      * @return The town plan, or null if the sites do not fit.
      */
     private static TownPlan tryRows(Dimension size, Dimension reservedTop,
                                     List<Plot> plots, int minRoad,
-                                    int maxRoad, int n) {
+                                    int maxRoad, int maxSky, int n) {
         final int width = size.width, height = size.height;
         final int gap = minRoad / 2;
 
@@ -318,17 +348,20 @@ public final class TownPlan {
             rowHeight[r] = h;
             total += h;
         }
-        if (total + used * minRoad > height) return null;
+        final int spare = height - total - used * minRoad;
+        if (spare < 0) return null;
 
-        // Make the streets as wide as there is room for, share out
-        // the rest of the height between the rows, and lay the
-        // streets under them.
-        final int road = Math.min(maxRoad, (height - total) / used);
-        final int extra = (height - total - used * road) / (used + 1);
+        // Give up to half the spare height to the land beyond the
+        // town, make the streets as wide as there is room for, share
+        // out the rest between the rows, and lay the streets under
+        // them.
+        final int sky = Math.min(maxSky, spare / 2);
+        final int road = Math.min(maxRoad, (height - total - sky) / used);
+        final int extra = (height - total - sky - used * road) / (used + 1);
         final TownPlan plan = new TownPlan(plots, road);
         final int cx = width / 2;
         final int[] base = new int[used];
-        int y = extra;
+        int y = sky + extra;
         for (int r = 0; r < used; r++) {
             base[r] = y + rowHeight[r];
             plan.streets.add(new Rectangle(0, base[r], width, road));
@@ -348,9 +381,13 @@ public final class TownPlan {
                                         hall.size.width, hall.size.height);
         }
 
-        // The avenue enters town under the colony name, and leaves it
-        // past the square, which lies in front of the town hall.
-        plan.avenue.add(new Rectangle(cx - road / 2, 0, road, base[0]));
+        // The avenue enters town through its back, under the colony
+        // name, and leaves it past the square, which lies in front of
+        // the town hall.
+        plan.farTop = base[0] - rowHeight[0];
+        plan.back = base[0];
+        plan.avenue.add(new Rectangle(cx - road / 2, plan.farTop, road,
+                                      base[0] - plan.farTop));
         if (reservedTop != null) {
             plan.reserved = new Rectangle(cx - reservedTop.width / 2, 0,
                 reservedTop.width, reservedTop.height);
