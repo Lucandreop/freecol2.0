@@ -102,6 +102,7 @@ import net.sf.freecol.common.model.ModelMessage.MessageType;
 import net.sf.freecol.common.model.Modifier;
 import net.sf.freecol.common.model.Monarch;
 import net.sf.freecol.common.model.Nation;
+import net.sf.freecol.common.model.Objective;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.Role;
 import net.sf.freecol.common.model.Settlement;
@@ -2042,6 +2043,36 @@ outer:  for (Effect effect : effects) {
     }
 
     /**
+     * Give the rewards for the objectives a player has reached since
+     * the last turn.
+     *
+     * @param cs A {@code ChangeSet} to update.
+     */
+    public void csRewardObjectives(ChangeSet cs) {
+        final Specification spec = getSpecification();
+        for (Objective o : Objective.values()) {
+            if (hasObjectiveReward(o) || !o.isComplete(this)) continue;
+            addObjectiveReward(o);
+            if (o.getGold() > 0) {
+                modifyGold(o.getGold());
+                cs.addPartial(See.only(this), this,
+                    "gold", String.valueOf(getGold()));
+            }
+            final UnitType unitType = o.getUnitType(spec);
+            final Europe europe = getEurope();
+            if (unitType != null && europe != null) {
+                new ServerUnit(getGame(), europe, this, unitType);//-vis: safe/Europe
+                cs.add(See.only(this), europe);
+            }
+            cs.addMessage(this, new ModelMessage(MessageType.DEFAULT,
+                    "objective.complete", this)
+                .addStringTemplate("%objective%",
+                    StringTemplate.key(o.getKey() + ".name"))
+                .addStringTemplate("%reward%", o.getReward(spec)));
+        }
+    }
+
+    /**
      * Starts a new turn for a player.
      *
      * @param random A pseudo-random number source.
@@ -2071,6 +2102,8 @@ outer:  for (Effect effect : effects) {
             }
 
             csUpdateNativeTrust(random, cs);
+
+            if (!isAI()) csRewardObjectives(cs);
 
             if (updateScore()) {
                 cs.addPartial(See.only(this), this,

@@ -42,9 +42,12 @@ import net.sf.freecol.client.gui.GUI;
 import net.sf.freecol.client.gui.ImageLibrary;
 import net.sf.freecol.common.i18n.Messages;
 import net.sf.freecol.common.model.Colony;
+import net.sf.freecol.common.model.Europe;
+import net.sf.freecol.common.model.Objective;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Unit;
+import net.sf.freecol.client.ClientOptions;
 
 
 /**
@@ -126,6 +129,37 @@ public final class AgendaPanel extends JPanel {
             });
         add(titleLabel, "span, align left");
 
+        // The next objective, for those still learning the game
+        final Objective objective = (player == null || !freeColClient
+            .getClientOptions().getBoolean(ClientOptions.GUI_SHOW_TUTORIAL))
+            ? null : Objective.getCurrent(player);
+        if (objective != null && fold != Fold.NONE) {
+            final JLabel star = new JLabel("\u2605");
+            star.setFont(bold);
+            star.setForeground(new Color(176, 124, 20));
+            add(star, "align center");
+            final JLabel goal = new JLabel(Messages.message(StringTemplate
+                .template("agenda.objective")
+                .addStringTemplate("%objective%",
+                    StringTemplate.key(objective.getKey() + ".name"))
+                .addAmount("%progress%", objective.getProgress(player))
+                .addAmount("%target%", objective.getTarget())));
+            goal.setFont(bold);
+            goal.setForeground(INK);
+            goal.setToolTipText(Messages.message(StringTemplate
+                .template("reportObjectivesPanel.reward")
+                .addStringTemplate("%reward%",
+                    objective.getReward(player.getSpecification()))));
+            goal.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            goal.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseClicked(MouseEvent e) {
+                        freeColClient.getGUI().showReportObjectivesPanel();
+                    }
+                });
+            add(goal);
+        }
+
         if (items.isEmpty() && fold != Fold.NONE) {
             final JLabel empty = new JLabel(Messages.message("agenda.empty"));
             empty.setFont(plain);
@@ -170,6 +204,10 @@ public final class AgendaPanel extends JPanel {
         final GUI gui = freeColClient.getGUI();
         if (item.subject instanceof Colony) {
             gui.showColonyPanel((Colony)item.subject, null);
+        } else if (item.subject instanceof Europe) {
+            gui.showEuropePanel();
+        } else if (item.subject instanceof Player) {
+            gui.showReportContinentalCongressPanel();
         } else if (item.subject instanceof Unit) {
             final Unit unit = (Unit)item.subject;
             if (unit.getTile() != null) {

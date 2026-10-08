@@ -869,8 +869,29 @@ public final class ColonyPanel extends PortPanel
                 }
             }
         }
+        // A tile not yet claimed suggests no occupation either, so find
+        // the best it would yield, food first
+        int amount = -1;
+        if (type == null && wl instanceof ColonyTile) {
+            final Tile tile = ((ColonyTile)wl).getWorkTile();
+            for (ProductionType pt : tile.getType()
+                     .getAvailableProductionTypes(false)) {
+                for (AbstractGoods output : pt.getOutputList()) {
+                    final GoodsType gt = output.getType();
+                    final int n = tile.getPotentialProduction(gt,
+                                                              unit.getType());
+                    if (n > amount || (n == amount && n > 0
+                            && gt.isFoodType() && !type.isFoodType())) {
+                        type = gt;
+                        amount = n;
+                    }
+                }
+            }
+        }
         if (type == null) return cannot("colonyPanel.preview.cannot");
-        final int amount = wl.getPotentialProduction(type, unit.getType());
+        if (amount < 0) {
+            amount = wl.getPotentialProduction(type, unit.getType());
+        }
         final StringTemplate main
             = StringTemplate.template("colonyPanel.preview.produce")
                 .addAmount("%amount%", amount)

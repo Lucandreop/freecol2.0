@@ -28,7 +28,7 @@ import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 
-import net.sf.freecol.client.control.Advisor.Objective;
+import net.sf.freecol.common.model.Objective;
 import net.sf.freecol.client.control.Advisor.Tip;
 import net.sf.freecol.common.model.Colony;
 import net.sf.freecol.common.model.Game;

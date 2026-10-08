@@ -62,7 +62,10 @@ public final class Agenda {
         /** More about it, or null. */
         public final StringTemplate detail;
 
-        /** The colony or unit it is about, or null. */
+        /**
+         * What it is about: a colony or unit, Europe, or the player
+         * for the Continental Congress.
+         */
         public final FreeColGameObject subject;
 
 
@@ -179,7 +182,7 @@ public final class Agenda {
         final int remaining = player.getRemainingFoundingFatherCost();
         addEvent(items, (remaining + perTurn - 1) / perTurn,
                  StringTemplate.template("agenda.father")
-                     .addNamed("%father%", father), null);
+                     .addNamed("%father%", father), player);
     }
 
     /**
@@ -195,7 +198,7 @@ public final class Agenda {
         final int needed = player.getImmigrationRequired()
             - player.getImmigration();
         addEvent(items, (needed + perTurn - 1) / perTurn,
-                 StringTemplate.key("agenda.immigrant"), null);
+                 StringTemplate.key("agenda.immigrant"), player.getEurope());
     }
 
     /**
