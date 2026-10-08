@@ -22,7 +22,10 @@ package net.sf.freecol.client.gui.panel;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.Graphics2D;
+import java.awt.Graphics;
 import java.awt.GridLayout;
+import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -36,6 +39,7 @@ import javax.swing.ComponentInputMap;
 import javax.swing.InputMap;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextPane;
@@ -68,6 +72,8 @@ import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.TransactionListener;
 import net.sf.freecol.common.model.Unit;
+import java.util.ArrayList;
+import javax.swing.border.TitledBorder;
 
 
 /**
@@ -618,6 +624,57 @@ public final class EuropePanel extends PortPanel {
     private final Europe europe;
 
 
+    /** The parts of the port, laid out on the desk. */
+    private JScrollPane toAmericaScroll, toEuropeScroll, inPortScroll,
+        cargoScroll, docksScroll, marketScroll, logScroll;
+
+    /** The name of the port, if shown. */
+    private JLabel portName = null;
+
+    /**
+     * Make a titled border for a part of the port, written in ink.
+     *
+     * @param key The message key of the title.
+     * @return The border.
+     */
+    private static TitledBorder inkBorder(String key) {
+        final TitledBorder border = Utility.localizedBorder(key);
+        border.setTitleFont(FontLibrary.getScaledFont("normal-bold-small"));
+        border.setTitleColor(PortPainter.INK);
+        return border;
+    }
+
+    /**
+     * Paint the port as a merchant's desk, with the parts of the port
+     * laid on it.
+     *
+     * @param g The {@code Graphics} to paint with.
+     */
+    @Override
+    protected void paintComponent(Graphics g) {
+        final Graphics2D g2d = (Graphics2D)g;
+        PortPainter.paintDesk(g2d, getWidth(), getHeight());
+        if (portName != null) {
+            final Rectangle r = portName.getBounds();
+            final int w = Math.max(r.width * 2, r.width + r.height * 4);
+            PortPainter.paintScroll(g2d, new Rectangle(r.x + (r.width - w) / 2,
+                r.y - r.height / 3, w, r.height * 5 / 3));
+        }
+        long seed = 1;
+        for (JScrollPane scroll : new JScrollPane[] { toAmericaScroll,
+                toEuropeScroll, cargoScroll, logScroll }) {
+            PortPainter.paintParchment(g2d, scroll.getBounds(), seed++);
+        }
+        PortPainter.paintHarbour(g2d, inPortScroll.getBounds());
+        PortPainter.paintMap(g2d, docksScroll.getBounds());
+        final List<Rectangle> slots = new ArrayList<>();
+        for (Component c : marketPanel.getComponents()) {
+            slots.add(SwingUtilities.convertRectangle(marketPanel,
+                                                      c.getBounds(), this));
+        }
+        PortPainter.paintMarket(g2d, marketScroll.getBounds(), slots);
+    }
+
     /**
      * The constructor for a EuropePanel.
      *
@@ -687,34 +744,40 @@ public final class EuropePanel extends PortPanel {
         cargoPanel.setLayout(new GridLayout(1, 0));
         europeanDocksPanel.setLayout(new GridLayout(0, 5));
 
-        JScrollPane toAmericaScroll = new JScrollPane(toAmericaPanel,
+        toAmericaScroll = new JScrollPane(toAmericaPanel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        JScrollPane toEuropeScroll = new JScrollPane(toEuropePanel,
+        toEuropeScroll = new JScrollPane(toEuropePanel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        JScrollPane inPortScroll = new JScrollPane(inPortPanel,
+        inPortScroll = new JScrollPane(inPortPanel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        JScrollPane cargoScroll = new JScrollPane(cargoPanel,
+        cargoScroll = new JScrollPane(cargoPanel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        JScrollPane docksScroll = new JScrollPane(europeanDocksPanel,
+        docksScroll = new JScrollPane(europeanDocksPanel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        JScrollPane marketScroll = new JScrollPane(marketPanel,
+        marketScroll = new JScrollPane(marketPanel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        JScrollPane logScroll = new JScrollPane(log,
+        logScroll = new JScrollPane(log,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
-        toAmericaPanel.setBorder(Utility.localizedBorder("sailingToAmerica"));
-        toEuropePanel.setBorder(Utility.localizedBorder("sailingToEurope"));
-        europeanDocksPanel.setBorder(Utility.localizedBorder("docks"));
-        inPortPanel.setBorder(Utility.localizedBorder("inPort"));
+        toAmericaPanel.setBorder(inkBorder("sailingToAmerica"));
+        toEuropePanel.setBorder(inkBorder("sailingToEurope"));
+        europeanDocksPanel.setBorder(inkBorder("docks"));
+        inPortPanel.setBorder(inkBorder("inPort"));
         marketPanel.setBorder(Utility.blankBorder(10, 10, 10, 10));
-        log.setBorder(Utility.localizedBorder("sales"));
+        log.setBorder(inkBorder("sales"));
+        for (JScrollPane scroll : new JScrollPane[] { toAmericaScroll,
+                toEuropeScroll, inPortScroll, cargoScroll, docksScroll,
+                marketScroll, logScroll }) {
+            scroll.setOpaque(false);
+            scroll.setBorder(Utility.blankBorder(4, 4, 4, 4));
+        }
 
         toAmericaScroll.getViewport().setOpaque(false);
         toAmericaPanel.setOpaque(false);
@@ -734,9 +797,10 @@ public final class EuropePanel extends PortPanel {
         initialize(europe);
 
         if(header) {
-            add(Utility.localizedHeader(europe.getNameKey(),
-                                        Utility.FONTSPEC_TITLE),
-                "span, top, center");
+            portName = Utility.localizedHeader(europe.getNameKey(),
+                                               Utility.FONTSPEC_TITLE);
+            portName.setForeground(PortPainter.INK);
+            add(portName, "span, top, center, gaptop 8, gapbottom 8");
         }
         add(toAmericaScroll, "sg, height 15%:, grow");
         add(toEuropeScroll, "sg, height 15%:, grow");

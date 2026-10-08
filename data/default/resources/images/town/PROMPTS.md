@@ -196,6 +196,46 @@ Mesmo formato do nº 2 (**1:1**, contínua). Use o prompt do nº 2, trocando o t
 
 ---
 
+## Parte 3: a tela da Europa (mesa do comerciante)
+
+### 29. `europe_desk.png`: mesa de madeira
+Proporção **3:2** (ex.: 2304x1536). Sem transparência.
+O fundo da tela inteira. Deixe o centro sem objetos, porque as seções ficam por cima.
+
+```
+Generate an image: a semi-realistic painterly illustration for a historical strategy video game set in 17th-century colonial North America. Natural, warm, slightly desaturated colors, soft late-afternoon light coming from the upper left.
+A large dark wooden merchant's desk seen straight from above, filling the whole image: worn oak planks with visible grain, a few small scratches and ink stains, a brass compass in the top left corner, a quill and inkwell near the top left, and a few old silver coins in the top right and bottom right corners. The middle of the desk is empty. No paper, no text, no border.
+```
+
+### 30. `parchment.png`: pergaminho
+Proporção **3:2**. Sem transparência.
+Cada seção da tela é uma folha deste pergaminho.
+
+```
+Generate an image: a semi-realistic painterly illustration for a historical strategy video game set in 17th-century colonial North America. Natural, warm, slightly desaturated colors, soft late-afternoon light coming from the upper left.
+A single sheet of old parchment paper filling the whole image, seen straight from above: warm cream color with faint stains, slightly darker aged edges, no folds, no writing, no drawings, evenly lit. No text, no border.
+```
+
+### 31. `europe_harbour.png`: porto com mar
+Proporção **3:1**. Sem transparência.
+O fundo da seção "No porto", onde ficam os navios.
+
+```
+Generate an image: a semi-realistic painterly illustration for a historical strategy video game set in 17th-century colonial North America. Natural, warm, slightly desaturated colors, soft late-afternoon light coming from the upper left.
+A painting of a calm European harbor seen from the water: a wide calm sea in the lower half, a pale sky with soft clouds, and a distant shore with a small port town, a stone quay and church towers along the horizon. Leave the sea in the foreground empty, with no ships. No people, no text, no border.
+```
+
+### 32. `europe_map.png`: mapa antigo
+Proporção **4:3**. Sem transparência.
+O fundo do "Cais", onde ficam os colonos.
+
+```
+Generate an image: a semi-realistic painterly illustration for a historical strategy video game set in 17th-century colonial North America. Natural, warm, slightly desaturated colors, soft late-afternoon light coming from the upper left.
+An old hand-drawn nautical map of the Atlantic Ocean on aged parchment, seen straight from above: the coasts of Europe and Africa on the right and of the Americas on the left drawn in faded brown ink, a compass rose, rhumb lines and a sea monster drawing. Faded and pale, so that small figures placed over it stay readable. No readable text, no labels, no border.
+```
+
+---
+
 ## Depois de gerar
 
 Me avise quais imagens você salvou na pasta. Eu:
