@@ -68,6 +68,7 @@ import net.sf.freecol.common.model.AbstractGoods;
 import net.sf.freecol.common.model.BuildableType;
 import net.sf.freecol.common.model.Building;
 import net.sf.freecol.common.model.Colony;
+import net.sf.freecol.common.model.ColonyTile;
 import net.sf.freecol.common.model.ColonyWas;
 import net.sf.freecol.common.model.Constants.ArmedUnitSettlementAction;
 import net.sf.freecol.common.model.Constants.ClaimAction;
@@ -115,6 +116,7 @@ import net.sf.freecol.common.model.Ownable;
 import net.sf.freecol.common.model.PathNode;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.Player.NoClaimReason;
+import net.sf.freecol.common.model.ProductionType;
 import net.sf.freecol.common.model.Region;
 import net.sf.freecol.common.model.Role;
 import net.sf.freecol.common.model.Settlement;
@@ -205,6 +207,38 @@ public final class InGameController extends FreeColClientHolder {
      * changed to anything else.
      */
     private final HashMap<Unit, Tile> explorers = new HashMap<>();
+
+    /** An improvement a pioneer is to make, and where. */
+    static final class PioneerJob {
+
+        /** The tile to improve. */
+        final Tile tile;
+        /** The improvement to make. */
+        final TileImprovementType type;
+
+        PioneerJob(Tile tile, TileImprovementType type) {
+            this.tile = tile;
+            this.type = type;
+        }
+    }
+
+    /**
+     * Pioneers improving the colony lands on their own, with the job
+     * each is on.  A pioneer stops when the player moves it elsewhere
+     * or gives it another destination.
+     */
+    private final HashMap<Unit, PioneerJob> pioneers = new HashMap<>();
+
+    /** Guards against resuming the pioneers within itself. */
+    private boolean resumingPioneers = false;
+
+    /** The focus the player keeps for each colony, by colony id. */
+    private final HashMap<String, ColonyFocus.Focus> colonyFoci
+        = new HashMap<>();
+
+    /** How many colonists each such colony had when last arranged. */
+    private final HashMap<String, Integer> colonyFocusSizes
+        = new HashMap<>();
 
     /** The advisor helping the player learn the game. */
     private final Advisor advisor = new Advisor();
@@ -565,6 +599,9 @@ public final class InGameController extends FreeColClientHolder {
             
             return false;
         }
+
+        // Pioneers that finished a job go on to the next by themselves
+        resumePioneers();
 
         // Successfully found a unit to display
         if (player.hasNextActiveUnit()) {
@@ -1194,9 +1231,11 @@ public final class InGameController extends FreeColClientHolder {
         Location destination = unit.getDestination();
         PathNode path = null;
         boolean ret;
-        // Sent somewhere else since it set out to explore?
+        // Sent somewhere else since it set out to explore or improve?
         if (explorers.containsKey(unit)
             && explorers.get(unit) != destination) explorers.remove(unit);
+        if (pioneers.containsKey(unit)
+            && pioneers.get(unit).tile != destination) pioneers.remove(unit);
         if (!requireOurTurn()
             || unit.isAtSea()
             || unit.getMovesLeft() <= 0
@@ -1242,6 +1281,9 @@ public final class InGameController extends FreeColClientHolder {
         } else if (unit.isAtLocation(destination)
             && explorers.containsKey(unit)) {
             ret = continueExploring(unit);
+        } else if (unit.isAtLocation(destination)
+            && pioneers.containsKey(unit)) {
+            ret = startPioneerJob(unit);
         } else if (unit.isAtLocation(destination)) {
             final Colony colony = (unit.hasTile()) ? unit.getTile().getColony()
                 : null;
@@ -1432,7 +1474,50 @@ public final class InGameController extends FreeColClientHolder {
         }
         fireChanges(was.toArray(new ObjectWas[0]));
         updateGUI(null, false);
+        // Keep to it as the colony grows
+        colonyFoci.put(colony.getId(), focus);
+        colonyFocusSizes.put(colony.getId(), colony.getUnitCount());
         return moved;
+    }
+
+    /**
+     * Get the focus kept for a colony.
+     *
+     * @param colony The {@code Colony} to check.
+     * @return The {@code ColonyFocus.Focus}, or null if the player
+     *     places the colonists.
+     */
+    public ColonyFocus.Focus getColonyFocus(Colony colony) {
+        return (colony == null) ? null : colonyFoci.get(colony.getId());
+    }
+
+    /**
+     * Stop keeping a focus for a colony: the player places the
+     * colonists.
+     *
+     * @param colony The {@code Colony}.
+     */
+    public void clearColonyFocus(Colony colony) {
+        if (colony == null) return;
+        colonyFoci.remove(colony.getId());
+        colonyFocusSizes.remove(colony.getId());
+    }
+
+    /**
+     * Arrange again the colonies with a focus whose number of
+     * colonists has changed, so newcomers go where they should.
+     *
+     * @param player The {@code Player} whose colonies to arrange.
+     */
+    private void keepColonyFoci(Player player) {
+        for (Colony colony : player.getColonyList()) {
+            final ColonyFocus.Focus focus = colonyFoci.get(colony.getId());
+            if (focus == null) continue;
+            final Integer size = colonyFocusSizes.get(colony.getId());
+            if (size == null || size != colony.getUnitCount()) {
+                focusColony(colony, focus);
+            }
+        }
     }
 
     /**
@@ -1467,6 +1552,335 @@ public final class InGameController extends FreeColClientHolder {
         fireChanges(unitWas);
         updateGUI(null, false);
         return true;
+    }
+
+    /**
+     * Set a pioneer to improve the lands of the colonies on its own,
+     * one improvement after another, until it has no tools left or
+     * there is nothing more worth doing.
+     *
+     * Called from AutoImproveAction.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @return True if the pioneer set to work.
+     */
+    public boolean autoImprove(Unit unit) {
+        if (unit == null || !getMyPlayer().owns(unit) || !unit.hasTile()
+            || unit.isOnCarrier() || !requireOurTurn()) return false;
+        if (!canImprove(unit)) {
+            showInformationPanel(unit, StringTemplate
+                .template("pioneer.noTools")
+                .addStringTemplate("%unit%",
+                    unit.getLabel(Unit.UnitLabelType.NATIONAL)));
+            return false;
+        }
+        final boolean ret = continuePioneering(unit);
+        if (!pioneers.containsKey(unit)) return false;
+        updateGUI(null, false);
+        return ret;
+    }
+
+    /**
+     * Can a unit improve the land at all?
+     *
+     * @param unit The {@code Unit} to check.
+     * @return True if there is an improvement it may make.
+     */
+    private static boolean canImprove(Unit unit) {
+        return any(unit.getSpecification().getTileImprovementTypeList(),
+                   it -> !it.isNatural() && it.isWorkerAllowed(unit));
+    }
+
+    /**
+     * Find a pioneer its next job and send it there, or start it if it
+     * is there already.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @return True if the pioneer carries on by itself, false if the
+     *     player should give it new orders.
+     */
+    private boolean continuePioneering(Unit unit) {
+        final Player player = getMyPlayer();
+        pioneers.remove(unit);
+        PioneerJob job = null;
+        String done = null;
+        if (!canImprove(unit)) {
+            done = "pioneer.noTools";
+        } else {
+            final Set<Tile> taken = new HashSet<>();
+            for (PioneerJob j : pioneers.values()) taken.add(j.tile);
+            job = findImprovement(unit, taken);
+            if (job == null) done = "pioneer.done";
+        }
+        if (job == null) {
+            final ModelMessage m = new ModelMessage(MessageType.DEFAULT,
+                done, unit)
+                .addStringTemplate("%unit%",
+                    unit.getLabel(Unit.UnitLabelType.NATIONAL));
+            player.addModelMessage(m);
+            turnReportMessages.add(m);
+            askClearGotoOrders(unit);
+            return false;
+        }
+        pioneers.put(unit, job);
+        if (unit.getTile() == job.tile) return startPioneerJob(unit);
+        if (!askSetDestination(unit, job.tile)) {
+            pioneers.remove(unit);
+            return false;
+        }
+        return unit.getMovesLeft() <= 0 || moveToDestination(unit, null);
+    }
+
+    /**
+     * A pioneer is where its job is: start it.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @return True if the pioneer is at work.
+     */
+    private boolean startPioneerJob(Unit unit) {
+        final PioneerJob job = pioneers.get(unit);
+        if (job == null || unit.getTile() != job.tile) return false;
+        // The GUI updates on the way must not start it again
+        final boolean resuming = resumingPioneers;
+        resumingPioneers = true;
+        try {
+            // Working, not going anywhere
+            askSetDestination(unit, null);
+            if (!job.tile.isImprovementTypeAllowed(job.type)
+                || !changeWorkImprovementType(unit, job.type)) {
+                pioneers.remove(unit);
+                return false;
+            }
+            return true;
+        } finally {
+            resumingPioneers = resuming;
+        }
+    }
+
+    /**
+     * Send the pioneers that have finished a job on to the next.  A
+     * pioneer found away from its job, with no orders, was moved by
+     * the player, and is left to the player.
+     */
+    private void resumePioneers() {
+        if (resumingPioneers || pioneers.isEmpty()) return;
+        resumingPioneers = true;
+        try {
+            for (Unit unit : new ArrayList<>(pioneers.keySet())) {
+                final PioneerJob job = pioneers.get(unit);
+                if (job == null) continue;
+                if (unit.isDisposed() || !getMyPlayer().owns(unit)) {
+                    pioneers.remove(unit);
+                } else if (unit.getState() == UnitState.ACTIVE
+                    && unit.getDestination() == null
+                    && unit.getMovesLeft() > 0) {
+                    if (unit.getTile() == job.tile) {
+                        continuePioneering(unit);
+                    } else {
+                        pioneers.remove(unit);
+                    }
+                }
+            }
+        } finally {
+            resumingPioneers = false;
+        }
+    }
+
+    /**
+     * Find the improvement a pioneer would best make next: on the
+     * lands of the player's colonies, the one that adds the most to
+     * production, counting lands being worked and the colony centres
+     * three times over, and nearer ones before further ones.  Forests
+     * are never cleared, nor lands changed into another type.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @param taken Tiles other pioneers are working on.
+     * @return The job, or null if there is nothing worth doing.
+     */
+    static PioneerJob findImprovement(Unit unit, Set<Tile> taken) {
+        final Player owner = unit.getOwner();
+        PioneerJob best = null;
+        double bestScore = 0.0;
+        for (Colony colony : owner.getColonyList()) {
+            for (ColonyTile ct : colony.getColonyTiles()) {
+                final Tile tile = ct.getWorkTile();
+                if (tile == null || taken.contains(tile)
+                    || tile.getOwningSettlement() != colony) continue;
+                final Unit worker = (ct.isEmpty()) ? null : ct.getFirstUnit();
+                for (TileImprovementType it : unit.getSpecification()
+                         .getTileImprovementTypeList()) {
+                    if (it.isNatural() || !it.isWorkerAllowed(unit)
+                        || !tile.isImprovementTypeAllowed(it)
+                        || tile.getTileImprovement(it) != null
+                        || it.getChange(tile.getType()) != null) continue;
+                    int value = 0;
+                    if (ct.isColonyCenterTile()) {
+                        for (ProductionType pt : ct.getAvailableProductionTypes(true)) {
+                            for (AbstractGoods ag : pt.getOutputList()) {
+                                value += 3 * it.getImprovementValue(tile,
+                                    ag.getType());
+                            }
+                        }
+                    } else if (worker != null && worker.getWorkType() != null) {
+                        value = 3 * it.getImprovementValue(tile,
+                            worker.getWorkType(), worker.getType());
+                    } else {
+                        for (ProductionType pt : ct.getAvailableProductionTypes(false)) {
+                            for (AbstractGoods ag : pt.getOutputList()) {
+                                value = Math.max(value, it.getImprovementValue(
+                                    tile, ag.getType()));
+                            }
+                        }
+                    }
+                    if (value <= 0) continue;
+                    int turns = 0;
+                    if (unit.getTile() != tile) {
+                        final PathNode path = unit.findPath(tile);
+                        if (path == null) continue;
+                        turns = path.getTotalTurns();
+                    }
+                    final double score = value / (double)(turns + 1);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = new PioneerJob(tile, it);
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Give a ship a trade route between a colony and Europe: it takes
+     * what the colony makes to spare to sell in Europe, and brings
+     * back the colonists waiting on the docks.
+     *
+     * Called from ColonyPanel.
+     *
+     * @param colony The {@code Colony} to trade from.
+     * @param ship The naval {@code Unit} to sail the route.
+     * @return True if the ship is now on the route.
+     */
+    public boolean europeRoute(Colony colony, Unit ship) {
+        final Player player = getMyPlayer();
+        final Europe europe = player.getEurope();
+        if (colony == null || ship == null || europe == null
+            || !ship.isNaval() || !player.owns(ship)
+            || !player.canMoveToEurope() || !requireOurTurn()) return false;
+
+        // One route for each colony, made again each time
+        final String name = Messages.message(StringTemplate
+            .template("europeRoute.name").addName("%colony%", colony.getName()));
+        TradeRoute route = find(player.getTradeRoutes(),
+                                r -> name.equals(r.getName()));
+        if (route == null) {
+            route = newTradeRoute(player);
+            if (route == null) return false;
+            route.setName(name);
+        }
+        route.clearStops();
+        final List<GoodsType> exports = getExports(colony);
+        final TradeRouteStop home = new TradeRouteStop(getGame(), colony);
+        final int loads = Math.max(1, ship.getCargoCapacity()
+            / Math.max(1, exports.size()));
+        for (GoodsType type : exports) {
+            for (int i = 0; i < loads; i++) home.addCargo(type);
+        }
+        route.addStop(home);
+        route.addStop(new TradeRouteStop(getGame(), europe));
+        if (!updateTradeRoute(route) || !assignTradeRoute(ship, route)) {
+            return false;
+        }
+
+        final StringTemplate goods = StringTemplate.label(", ");
+        for (GoodsType type : exports) goods.addNamed(type);
+        showInformationPanel(ship, StringTemplate
+            .template((exports.isEmpty()) ? "europeRoute.colonistsOnly"
+                : "europeRoute.assigned")
+            .addStringTemplate("%unit%", ship.getLabel(Unit.UnitLabelType.NATIONAL))
+            .addName("%colony%", colony.getName())
+            .addStringTemplate("%goods%", goods));
+        return true;
+    }
+
+    /**
+     * What a colony makes to spare that Europe buys: goods made faster
+     * than the colony uses them, leaving out food, horses, arms, and
+     * what is needed for building.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param colony The {@code Colony} to check.
+     * @return The goods types to sell.
+     */
+    static List<GoodsType> getExports(Colony colony) {
+        final Player player = colony.getOwner();
+        final List<GoodsType> ret = new ArrayList<>();
+        for (GoodsType type : colony.getSpecification()
+                 .getStorableGoodsTypeList()) {
+            if (type.isFoodType() || type.isBreedable() || type.getMilitary()
+                || type.isBuildingMaterial() || type.isRawBuildingMaterial()
+                || !player.canTrade(type)) continue;
+            if (colony.getNetProductionOf(type) > 0) ret.add(type);
+        }
+        return ret;
+    }
+
+    /**
+     * Does a trade route call at Europe?
+     *
+     * @param route The {@code TradeRoute} to check.
+     * @return True if one of its stops is Europe.
+     */
+    private static boolean isEuropeRoute(TradeRoute route) {
+        return route != null
+            && any(route.getStopList(), s -> s.getLocation() instanceof Europe);
+    }
+
+    /**
+     * Is there a colonist to take on or put off at a stop?
+     *
+     * @param unit The carrier {@code Unit}.
+     * @param stop The {@code TradeRouteStop} to check.
+     * @return True if there is a colonist to carry.
+     */
+    private static boolean hasFerryWork(Unit unit, TradeRouteStop stop) {
+        final Location loc = stop.getLocation();
+        if (loc instanceof Europe) {
+            return unit.getSpaceLeft() > 0
+                && any(((Europe)loc).getUnitList(), u -> !u.isNaval());
+        }
+        return unit.getUnitCount() > 0;
+    }
+
+    /**
+     * On a route through Europe, take on the colonists waiting on the
+     * docks, and put them off at the colony.
+     *
+     * @param unit The carrier {@code Unit}.
+     * @param stop The {@code TradeRouteStop} it is at.
+     * @param lb A {@code LogBuilder} to note what was done.
+     */
+    private void ferryColonists(Unit unit, TradeRouteStop stop,
+                                LogBuilder lb) {
+        int n = 0;
+        if (stop.getLocation() instanceof Europe) {
+            for (Unit u : new ArrayList<>(((Europe)stop.getLocation())
+                                              .getUnitList())) {
+                if (u.isNaval() || unit.getSpaceLeft() <= 0) continue;
+                if (boardShip(u, unit)) n++;
+            }
+            if (n > 0) lb.add(" ", Messages.message(StringTemplate
+                    .template("europeRoute.boarded").addAmount("%number%", n)));
+        } else {
+            for (Unit u : new ArrayList<>(unit.getUnitList())) {
+                if (leaveShip(u)) n++;
+            }
+            if (n > 0) lb.add(" ", Messages.message(StringTemplate
+                    .template("europeRoute.landed").addAmount("%number%", n)));
+        }
     }
 
     /**
@@ -2638,6 +3052,7 @@ public final class InGameController extends FreeColClientHolder {
             lb.mark();
             unloadUnitAtStop(unit, lb); // Anything to unload?
             loadUnitAtStop(unit, lb); // Anything to load?
+            if (isEuropeRoute(tr)) ferryColonists(unit, stop, lb);
             lb.grew("\n", Messages.message(stop.getLabelFor("tradeRoute.atStop",
                                                             player)));
 
@@ -2652,7 +3067,8 @@ public final class InGameController extends FreeColClientHolder {
             if (unit.atStop(moreStops.get(0))) moreStops.remove(0);
             for (TradeRouteStop trs : moreStops) {
                 if (trs.hasWork(unit, (!checkProduction) ? 0
-                                : unit.getTurnsToReach(trs.getLocation()))) {
+                                : unit.getTurnsToReach(trs.getLocation()))
+                    || (isEuropeRoute(tr) && hasFerryWork(unit, trs))) {
                     next = trs;
                     break;
                 }
@@ -5459,6 +5875,9 @@ public final class InGameController extends FreeColClientHolder {
 
             // Let the advisor add its tips and warnings to the report.
             advise(player);
+
+            // Colonies keeping a focus place their newcomers
+            keepColonyFoci(player);
 
             // Get turn report out quickly before more message display occurs.
             player.removeDisplayedModelMessages();

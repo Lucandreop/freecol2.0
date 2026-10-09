@@ -76,6 +76,7 @@ import net.sf.freecol.common.model.TransactionListener;
 import net.sf.freecol.common.model.Unit;
 import java.util.ArrayList;
 import javax.swing.border.TitledBorder;
+import java.awt.Color;
 
 
 /**
@@ -824,9 +825,12 @@ public final class EuropePanel extends PortPanel {
         add(docksScroll, "spany 2, grow");
         add(cargoScroll, "height 10%:, grow");
         // How to buy and sell, which is not obvious
-        final JLabel marketHint = new JLabel(Messages.message("europePanel.marketHint"));
-        marketHint.setFont(FontLibrary.getScaledFont("simple-plain-tiny"));
-        marketHint.setForeground(PortPainter.INK);
+        // Light on the dark wood, in two short lines
+        final JLabel marketHint = new JLabel("<html><center>"
+            + Messages.message("europePanel.marketHint") + "<br>"
+            + Messages.message("europePanel.marketHint2") + "</center></html>");
+        marketHint.setFont(FontLibrary.getScaledFont("simple-bold-tiny"));
+        marketHint.setForeground(new Color(250, 236, 205));
         add(marketHint, "span, center, gaptop 2");
         add(marketScroll, "span, height 10%:, grow");
 

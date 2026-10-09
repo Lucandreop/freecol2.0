@@ -30,8 +30,10 @@ public class AllTests {
         //$JUnit-BEGIN$
         suite.addTestSuite(AdvisorTest.class);
         suite.addTestSuite(ColonyFocusTest.class);
+        suite.addTestSuite(EuropeRouteTest.class);
         suite.addTestSuite(ExploreTest.class);
         suite.addTestSuite(MoveTest.class);
+        suite.addTestSuite(PioneerTest.class);
         suite.addTestSuite(RouteDangerTest.class);
         //$JUnit-END$
         return suite;

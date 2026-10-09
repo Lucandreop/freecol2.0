@@ -590,6 +590,9 @@ public class SwingGUI extends GUI {
     /**
      * Starts a goto operation.
      */
+    /** The tile last pointed at during a goto, valid path or not. */
+    private Tile gotoTarget = null;
+
     private void startGoto() {
         this.gotoStarted = true;
         this.canvas.setCursor(Canvas.GO_CURSOR);
@@ -619,6 +622,7 @@ public class SwingGUI extends GUI {
      * @param tile The new goto {@code Tile}.
      */     
     private void updateGotoTile(Tile tile) {
+        this.gotoTarget = tile;
         final Unit unit = getActiveUnit();
         if (tile == null || unit == null) {
             clearGotoPath();
@@ -1269,6 +1273,34 @@ public class SwingGUI extends GUI {
      * {@inheritDoc}
      */
     @Override
+    public void traverseGotoPathWithGroup() {
+        final Unit unit = getActiveUnit();
+        final PathNode path = this.mapViewer.getMapViewerState().getGotoPath();
+        if (unit == null || !unit.hasTile() || path == null
+            || !isGotoStarted()) {
+            traverseGotoPath();
+            return;
+        }
+        final Tile destination = path.getLastNode().getTile();
+        // The others standing with the unit, that travel the same way
+        final List<Unit> group = new ArrayList<>();
+        for (Unit u : unit.getTile().getUnitList()) {
+            if (u != unit && getMyPlayer().owns(u)
+                && u.isNaval() == unit.isNaval()) group.add(u);
+        }
+        traverseGotoPath();
+        if (destination == null) return;
+        for (Unit u : group) {
+            final PathNode p = u.findPath(destination);
+            if (p != null) igc().goToTile(u, p);
+        }
+        refresh();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public boolean startGotoAt(int x, int y) {
         final Unit active = getActiveUnit();
         final Tile tile = tileAt(x, y);
@@ -1292,11 +1324,19 @@ public class SwingGUI extends GUI {
         if (unit == null || !isGotoStarted()) {
             return;
         }
-        
+
         setUnitPath(null);
 
         final PathNode path = stopGoto();
-        if (path == null) {
+        final Tile target = this.gotoTarget;
+        this.gotoTarget = null;
+        if (path == null && unit.isNaval() && unit.hasTile()
+            && unit.getUnitCount() > 0 && target != null && target.isLand()
+            && unit.getTile().isAdjacent(target)) {
+            // A ship pointed at the land beside it: put people ashore
+            igc().moveDirection(unit, unit.getTile().getDirection(target),
+                                true);
+        } else if (path == null) {
             igc().clearGotoOrders(unit);
         } else {
             igc().goToTile(unit, path);

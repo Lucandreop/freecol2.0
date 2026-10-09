@@ -142,7 +142,8 @@ add(new FindSettlementAction(freeColClient));
         add(new SaveAndQuitAction(freeColClient));
         add(new QuitAction(freeColClient));
         add(new AttackRangedAction(freeColClient));
-        add(new ReconnectAction(freeColClient));
+        add(new AutoImproveAction(freeColClient));
+add(new ReconnectAction(freeColClient));
         add(new RenameAction(freeColClient));
         add(new ReportCargoAction(freeColClient));
         add(new ReportContinentalCongressAction(freeColClient));
@@ -279,6 +280,7 @@ add(new ScaleMapAction(freeColClient));
                 }
             }
         }
+        ret.add(new UnitButton(this, AutoImproveAction.id));
         ret.add(new UnitButton(this, BuildColonyAction.id));
         ret.add(new UnitButton(this, DisbandUnitAction.id));
         return ret;

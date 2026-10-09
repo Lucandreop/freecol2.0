@@ -42,13 +42,16 @@ import net.sf.freecol.client.FreeColClient;
 import net.sf.freecol.client.gui.GUI;
 import net.sf.freecol.client.gui.ImageLibrary;
 import net.sf.freecol.common.model.Direction;
+import net.sf.freecol.common.model.StringTemplate;
 import net.sf.freecol.common.model.Tile;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.resources.PropertyList;
 import net.sf.freecol.common.resources.ResourceManager;
 import java.awt.Container;
+import java.awt.FlowLayout;
 import javax.swing.Action;
 import net.sf.freecol.client.gui.action.FreeColAction;
+import net.sf.freecol.common.i18n.Messages;
 
 
 /**
@@ -88,6 +91,9 @@ public final class CornerMapControls extends MapControls {
 
     /** The guide through the first steps, for new players. */
     private final GuidePanel guidePanel;
+
+    /** The units on the tile of the active unit, to pick one from. */
+    private final JPanel stackPanel;
 
     /** A skin for the mini map. */
     private Image miniMapSkin;
@@ -131,6 +137,10 @@ public final class CornerMapControls extends MapControls {
     
         this.agendaPanel = new AgendaPanel(freeColClient);
         this.guidePanel = new GuidePanel(freeColClient);
+        this.stackPanel = new JPanel(new FlowLayout(FlowLayout.CENTER,
+                                                    lib.scaleInt(3), 0));
+        this.stackPanel.setOpaque(false);
+        this.stackPanel.setVisible(false);
         this.miniMapPanel = new MiniMapFreeColPanel(freeColClient);
         this.miniMapPanelSkin = new MiniMapPanelSkin();
         
@@ -257,6 +267,9 @@ public final class CornerMapControls extends MapControls {
                 this.agendaPanel.setVisible(!this.guidePanel.hidesAgenda());
                 ret.add(this.agendaPanel);
             }
+            if (this.stackPanel.getParent() == null) {
+                ret.add(this.stackPanel);
+            }
             if (this.guidePanel.isWanted()
                 && this.guidePanel.getParent() == null) {
                 this.guidePanel.refresh();
@@ -341,6 +354,7 @@ public final class CornerMapControls extends MapControls {
         if (rose && this.compassRose.isShowing()) ret.add(this.compassRose);
         if (this.agendaPanel.getParent() != null) ret.add(this.agendaPanel);
         if (this.guidePanel.getParent() != null) ret.add(this.guidePanel);
+        if (this.stackPanel.getParent() != null) ret.add(this.stackPanel);
         for (UnitButton ub : this.unitButtons) {
             if (ub.isShowing()) ret.add(ub);
         }
@@ -384,6 +398,7 @@ public final class CornerMapControls extends MapControls {
             }
             layoutVisibleUnitButtons();
         }
+        updateStack(active);
     }
 
     /**
@@ -411,6 +426,66 @@ public final class CornerMapControls extends MapControls {
             ub.setLocation(x, y);
             x += gap + ub.getWidth();
         }
+    }
+
+    /**
+     * Show the units standing with the active unit, when there is more
+     * than one, above the order buttons: a click picks one.
+     *
+     * @param active The active {@code Unit}, if any.
+     */
+    private void updateStack(Unit active) {
+        this.stackPanel.removeAll();
+        final Container parent = this.stackPanel.getParent();
+        final List<Unit> units = (active == null || !active.hasTile()
+            || active.isOnCarrier()) ? List.of()
+            : active.getTile().getUnitList();
+        final List<Unit> own = new ArrayList<>();
+        for (Unit u : units) {
+            if (getMyPlayer() != null && getMyPlayer().owns(u)) own.add(u);
+        }
+        if (parent == null || own.size() < 2) {
+            this.stackPanel.setVisible(false);
+            return;
+        }
+        for (Unit u : own) {
+            final java.awt.image.BufferedImage image
+                = lib.getSmallerUnitImage(u);
+            final JLabel label = new JLabel(new javax.swing.ImageIcon(image));
+            final boolean moves = u.getMovesLeft() > 0;
+            label.setEnabled(moves);
+            label.setToolTipText(Messages.message(StringTemplate
+                .template("mapControls.stackUnit")
+                .addStringTemplate("%unit%",
+                    u.getLabel(Unit.UnitLabelType.NATIONAL))
+                .addName("%moves%", u.getMovesAsString())));
+            label.setBorder((u == active)
+                ? javax.swing.BorderFactory.createLineBorder(
+                    new java.awt.Color(240, 200, 90), 2)
+                : javax.swing.BorderFactory.createEmptyBorder(2, 2, 2, 2));
+            label.setCursor(java.awt.Cursor.getPredefinedCursor(
+                    java.awt.Cursor.HAND_CURSOR));
+            label.addMouseListener(new java.awt.event.MouseAdapter() {
+                    @Override
+                    public void mouseClicked(java.awt.event.MouseEvent e) {
+                        getGUI().changeView(u, true);
+                    }
+                });
+            this.stackPanel.add(label);
+        }
+        this.stackPanel.setSize(this.stackPanel.getPreferredSize());
+        int top = parent.getHeight();
+        for (UnitButton ub : this.unitButtons) {
+            if (ub.isVisible()) top = Math.min(top, ub.getY());
+        }
+        final int left = this.miniMapPanel.getWidth();
+        final int right = this.infoPanel.getX();
+        this.stackPanel.setLocation(
+            left + (right - left - this.stackPanel.getWidth()) / 2,
+            top - this.stackPanel.getHeight() - lib.scaleInt(4));
+        this.stackPanel.setVisible(true);
+        this.stackPanel.revalidate();
+        this.stackPanel.repaint();
     }
 
     private boolean isShowingOrIconified(JComponent panel) {

@@ -102,9 +102,16 @@ public final class CanvasMouseListener extends FreeColClientHolder implements Mo
     public void mouseReleased(MouseEvent e) {
         if (!e.getComponent().isEnabled()) return;
 
-        // Letting go of the right button sends the unit where it points
+        // Letting go of the right button sends the unit where it
+        // points, and with control held, everyone on its tile
         if (e.getButton() == MouseEvent.BUTTON3) {
-            if (getGUI().isGotoStarted()) getGUI().traverseGotoPath();
+            if (getGUI().isGotoStarted()) {
+                if (e.isControlDown()) {
+                    getGUI().traverseGotoPathWithGroup();
+                } else {
+                    getGUI().traverseGotoPath();
+                }
+            }
             return;
         }
 

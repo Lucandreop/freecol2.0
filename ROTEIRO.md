@@ -29,10 +29,10 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
 ## Fase 1 — Menos trabalho braçal
 
 - ✅ **Foco da colônia**: botões Equilíbrio / Comida / Martelos / Sinos que distribuem os colonos sozinhos
-- ⬜ **Mover em grupo**: todas as unidades de uma casa vão juntas para um destino
-- ⬜ **Rota colônia ↔ Europa num clique**: vende o excedente e traz os colonos do cais
-- ⬜ **Pioneiro automático**: melhora os terrenos das colônias sozinho
-- ⬜ Foco da colônia que se mantém: os colonos novos já entram no lugar certo
+- ✅ **Mover em grupo**: Ctrl + botão direito leva todas as unidades da casa
+- ✅ **Rota colônia ↔ Europa num clique**: vende o excedente e traz os colonos do cais
+- ✅ **Pioneiro automático**: melhora os terrenos das colônias sozinho
+- ✅ Foco da colônia que se mantém: os colonos novos já entram no lugar certo
 
 ## Fase 2 — Menos interrupções
 
@@ -43,9 +43,16 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
 - ⬜ "Decidir depois" nas janelas que não precisam de resposta na hora
 - ⬜ Diário da partida: o jogo grava tempo por turno, ordens dadas e janelas abertas, para medir onde cansa
 
-## Fase 3 — Um meio de jogo vivo
+## Fase 3 — Um meio de jogo vivo, com a história da colonização
 
-- ⬜ **Acontecimentos**: tempestade, epidemia, piratas na costa, revolta de colonos leais à Coroa, imigrante famoso, contrato de compra
+Plano detalhado em `HISTORIA.md`.
+
+- ⬜ **Dilemas históricos**: o tempo da fome, a varíola nas aldeias, os peregrinos, a febre do ouro, o contrabando
+- ⬜ **A Gazeta**: os fatos reais do período no ano em que aconteceram, e as notícias das outras nações
+- ⬜ Personagens de verdade: retratos, frases e biografias dos Pais Fundadores; imigrantes famosos
+- ⬜ **Carta régia** no início: companhia de comércio, colônia religiosa, colônia real, capitania hereditária
+- ⬜ Diário de bordo da partida, no tom da época
+
 - ⬜ Freios visíveis: avisar quando o Rei reforça o exército, e por quê
 - ⬜ Tendência dos preços no mercado (subindo, caindo)
 - ⬜ Números que explicam: passar o mouse e ver de onde vem cada parte da produção
@@ -59,7 +66,7 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
   - arte do navio fantasma e da tripulação, e o mapa com ar sombrio
   - um fim próprio para a vingança
 - ⬜ **Vitórias alternativas**: econômica, por influência com os nativos, por pontos num ano-limite
-- ⬜ Conquistas pela partida inteira, não só no começo
+- ⬜ **Conquistas no estilo Steam**, para platinar, guardadas entre partidas: plano em `CONQUISTAS.md`
 - ⬜ **Retrospectiva no fim**: gráfico dos pontos, colônias fundadas, pais fundadores, batalhas
 - ⬜ Congresso Continental com o efeito de cada Pai Fundador claro
 

@@ -36,6 +36,7 @@ import net.sf.freecol.client.FreeColClient;
 import net.sf.freecol.client.gui.FontLibrary;
 import net.sf.freecol.client.gui.action.AssignTradeRouteAction;
 import net.sf.freecol.client.gui.action.AttackRangedAction;
+import net.sf.freecol.client.gui.action.AutoImproveAction;
 import net.sf.freecol.client.gui.action.BuildColonyAction;
 import net.sf.freecol.client.gui.action.CenterAction;
 import net.sf.freecol.client.gui.action.ChangeAction;
@@ -248,6 +249,7 @@ public class InGameMenuBar extends FreeColMenuBar {
         menu.add(getMenuItem(GotoTileAction.id));
         menu.add(getMenuItem(ExploreAction.id));
         menu.add(getMenuItem(SailToEuropeAction.id));
+        menu.add(getMenuItem(AutoImproveAction.id));
         menu.add(getMenuItem(ExecuteGotoOrdersAction.id));
         menu.add(getMenuItem(AssignTradeRouteAction.id));
 
