@@ -1269,6 +1269,34 @@ public class SwingGUI extends GUI {
      * {@inheritDoc}
      */
     @Override
+    public void traverseGotoPathWithGroup() {
+        final Unit unit = getActiveUnit();
+        final PathNode path = this.mapViewer.getMapViewerState().getGotoPath();
+        if (unit == null || !unit.hasTile() || path == null
+            || !isGotoStarted()) {
+            traverseGotoPath();
+            return;
+        }
+        final Tile destination = path.getLastNode().getTile();
+        // The others standing with the unit, that travel the same way
+        final List<Unit> group = new ArrayList<>();
+        for (Unit u : unit.getTile().getUnitList()) {
+            if (u != unit && getMyPlayer().owns(u)
+                && u.isNaval() == unit.isNaval()) group.add(u);
+        }
+        traverseGotoPath();
+        if (destination == null) return;
+        for (Unit u : group) {
+            final PathNode p = u.findPath(destination);
+            if (p != null) igc().goToTile(u, p);
+        }
+        refresh();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public boolean startGotoAt(int x, int y) {
         final Unit active = getActiveUnit();
         final Tile tile = tileAt(x, y);

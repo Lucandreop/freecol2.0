@@ -1382,6 +1382,14 @@ public class GUI extends FreeColClientHolder {
     public boolean startGotoAt(int x, int y) { return false; }
 
     /**
+     * Send the active unit along the goto path, and with it every other
+     * unit of the player standing on the same tile.
+     *
+     * Used by: CanvasMouseListener
+     */
+    public void traverseGotoPathWithGroup() {}
+
+    /**
      * Send the active unit along the current goto path as far as possible.
      *
      * Used by: CanvasMouseListener
