@@ -29,7 +29,7 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
 ## Fase 1 — Menos trabalho braçal
 
 - ✅ **Foco da colônia**: botões Equilíbrio / Comida / Martelos / Sinos que distribuem os colonos sozinhos
-- ⬜ **Mover em grupo**: todas as unidades de uma casa vão juntas para um destino
+- ✅ **Mover em grupo**: Ctrl + botão direito leva todas as unidades da casa
 - ⬜ **Rota colônia ↔ Europa num clique**: vende o excedente e traz os colonos do cais
 - ⬜ **Pioneiro automático**: melhora os terrenos das colônias sozinho
 - ⬜ Foco da colônia que se mantém: os colonos novos já entram no lugar certo
@@ -59,7 +59,7 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
   - arte do navio fantasma e da tripulação, e o mapa com ar sombrio
   - um fim próprio para a vingança
 - ⬜ **Vitórias alternativas**: econômica, por influência com os nativos, por pontos num ano-limite
-- ⬜ Conquistas pela partida inteira, não só no começo
+- ⬜ **Conquistas no estilo Steam**, para platinar, guardadas entre partidas: plano em `CONQUISTAS.md`
 - ⬜ **Retrospectiva no fim**: gráfico dos pontos, colônias fundadas, pais fundadores, batalhas
 - ⬜ Congresso Continental com o efeito de cada Pai Fundador claro
 
