@@ -68,6 +68,7 @@ import net.sf.freecol.common.model.AbstractGoods;
 import net.sf.freecol.common.model.BuildableType;
 import net.sf.freecol.common.model.Building;
 import net.sf.freecol.common.model.Colony;
+import net.sf.freecol.common.model.ColonyTile;
 import net.sf.freecol.common.model.ColonyWas;
 import net.sf.freecol.common.model.Constants.ArmedUnitSettlementAction;
 import net.sf.freecol.common.model.Constants.ClaimAction;
@@ -115,6 +116,7 @@ import net.sf.freecol.common.model.Ownable;
 import net.sf.freecol.common.model.PathNode;
 import net.sf.freecol.common.model.Player;
 import net.sf.freecol.common.model.Player.NoClaimReason;
+import net.sf.freecol.common.model.ProductionType;
 import net.sf.freecol.common.model.Region;
 import net.sf.freecol.common.model.Role;
 import net.sf.freecol.common.model.Settlement;
@@ -205,6 +207,30 @@ public final class InGameController extends FreeColClientHolder {
      * changed to anything else.
      */
     private final HashMap<Unit, Tile> explorers = new HashMap<>();
+
+    /** An improvement a pioneer is to make, and where. */
+    static final class PioneerJob {
+
+        /** The tile to improve. */
+        final Tile tile;
+        /** The improvement to make. */
+        final TileImprovementType type;
+
+        PioneerJob(Tile tile, TileImprovementType type) {
+            this.tile = tile;
+            this.type = type;
+        }
+    }
+
+    /**
+     * Pioneers improving the colony lands on their own, with the job
+     * each is on.  A pioneer stops when the player moves it elsewhere
+     * or gives it another destination.
+     */
+    private final HashMap<Unit, PioneerJob> pioneers = new HashMap<>();
+
+    /** Guards against resuming the pioneers within itself. */
+    private boolean resumingPioneers = false;
 
     /** The advisor helping the player learn the game. */
     private final Advisor advisor = new Advisor();
@@ -565,6 +591,9 @@ public final class InGameController extends FreeColClientHolder {
             
             return false;
         }
+
+        // Pioneers that finished a job go on to the next by themselves
+        resumePioneers();
 
         // Successfully found a unit to display
         if (player.hasNextActiveUnit()) {
@@ -1194,9 +1223,11 @@ public final class InGameController extends FreeColClientHolder {
         Location destination = unit.getDestination();
         PathNode path = null;
         boolean ret;
-        // Sent somewhere else since it set out to explore?
+        // Sent somewhere else since it set out to explore or improve?
         if (explorers.containsKey(unit)
             && explorers.get(unit) != destination) explorers.remove(unit);
+        if (pioneers.containsKey(unit)
+            && pioneers.get(unit).tile != destination) pioneers.remove(unit);
         if (!requireOurTurn()
             || unit.isAtSea()
             || unit.getMovesLeft() <= 0
@@ -1242,6 +1273,9 @@ public final class InGameController extends FreeColClientHolder {
         } else if (unit.isAtLocation(destination)
             && explorers.containsKey(unit)) {
             ret = continueExploring(unit);
+        } else if (unit.isAtLocation(destination)
+            && pioneers.containsKey(unit)) {
+            ret = startPioneerJob(unit);
         } else if (unit.isAtLocation(destination)) {
             final Colony colony = (unit.hasTile()) ? unit.getTile().getColony()
                 : null;
@@ -1467,6 +1501,204 @@ public final class InGameController extends FreeColClientHolder {
         fireChanges(unitWas);
         updateGUI(null, false);
         return true;
+    }
+
+    /**
+     * Set a pioneer to improve the lands of the colonies on its own,
+     * one improvement after another, until it has no tools left or
+     * there is nothing more worth doing.
+     *
+     * Called from AutoImproveAction.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @return True if the pioneer set to work.
+     */
+    public boolean autoImprove(Unit unit) {
+        if (unit == null || !getMyPlayer().owns(unit) || !unit.hasTile()
+            || unit.isOnCarrier() || !requireOurTurn()) return false;
+        if (!canImprove(unit)) {
+            showInformationPanel(unit, StringTemplate
+                .template("pioneer.noTools")
+                .addStringTemplate("%unit%",
+                    unit.getLabel(Unit.UnitLabelType.NATIONAL)));
+            return false;
+        }
+        final boolean ret = continuePioneering(unit);
+        if (!pioneers.containsKey(unit)) return false;
+        updateGUI(null, false);
+        return ret;
+    }
+
+    /**
+     * Can a unit improve the land at all?
+     *
+     * @param unit The {@code Unit} to check.
+     * @return True if there is an improvement it may make.
+     */
+    private static boolean canImprove(Unit unit) {
+        return any(unit.getSpecification().getTileImprovementTypeList(),
+                   it -> !it.isNatural() && it.isWorkerAllowed(unit));
+    }
+
+    /**
+     * Find a pioneer its next job and send it there, or start it if it
+     * is there already.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @return True if the pioneer carries on by itself, false if the
+     *     player should give it new orders.
+     */
+    private boolean continuePioneering(Unit unit) {
+        final Player player = getMyPlayer();
+        pioneers.remove(unit);
+        PioneerJob job = null;
+        String done = null;
+        if (!canImprove(unit)) {
+            done = "pioneer.noTools";
+        } else {
+            final Set<Tile> taken = new HashSet<>();
+            for (PioneerJob j : pioneers.values()) taken.add(j.tile);
+            job = findImprovement(unit, taken);
+            if (job == null) done = "pioneer.done";
+        }
+        if (job == null) {
+            final ModelMessage m = new ModelMessage(MessageType.DEFAULT,
+                done, unit)
+                .addStringTemplate("%unit%",
+                    unit.getLabel(Unit.UnitLabelType.NATIONAL));
+            player.addModelMessage(m);
+            turnReportMessages.add(m);
+            askClearGotoOrders(unit);
+            return false;
+        }
+        pioneers.put(unit, job);
+        if (unit.getTile() == job.tile) return startPioneerJob(unit);
+        if (!askSetDestination(unit, job.tile)) {
+            pioneers.remove(unit);
+            return false;
+        }
+        return unit.getMovesLeft() <= 0 || moveToDestination(unit, null);
+    }
+
+    /**
+     * A pioneer is where its job is: start it.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @return True if the pioneer is at work.
+     */
+    private boolean startPioneerJob(Unit unit) {
+        final PioneerJob job = pioneers.get(unit);
+        if (job == null || unit.getTile() != job.tile) return false;
+        // The GUI updates on the way must not start it again
+        final boolean resuming = resumingPioneers;
+        resumingPioneers = true;
+        try {
+            // Working, not going anywhere
+            askSetDestination(unit, null);
+            if (!job.tile.isImprovementTypeAllowed(job.type)
+                || !changeWorkImprovementType(unit, job.type)) {
+                pioneers.remove(unit);
+                return false;
+            }
+            return true;
+        } finally {
+            resumingPioneers = resuming;
+        }
+    }
+
+    /**
+     * Send the pioneers that have finished a job on to the next.  A
+     * pioneer found away from its job, with no orders, was moved by
+     * the player, and is left to the player.
+     */
+    private void resumePioneers() {
+        if (resumingPioneers || pioneers.isEmpty()) return;
+        resumingPioneers = true;
+        try {
+            for (Unit unit : new ArrayList<>(pioneers.keySet())) {
+                final PioneerJob job = pioneers.get(unit);
+                if (job == null) continue;
+                if (unit.isDisposed() || !getMyPlayer().owns(unit)) {
+                    pioneers.remove(unit);
+                } else if (unit.getState() == UnitState.ACTIVE
+                    && unit.getDestination() == null
+                    && unit.getMovesLeft() > 0) {
+                    if (unit.getTile() == job.tile) {
+                        continuePioneering(unit);
+                    } else {
+                        pioneers.remove(unit);
+                    }
+                }
+            }
+        } finally {
+            resumingPioneers = false;
+        }
+    }
+
+    /**
+     * Find the improvement a pioneer would best make next: on the
+     * lands of the player's colonies, the one that adds the most to
+     * production, counting lands being worked and the colony centres
+     * three times over, and nearer ones before further ones.  Forests
+     * are never cleared, nor lands changed into another type.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param unit The pioneer {@code Unit}.
+     * @param taken Tiles other pioneers are working on.
+     * @return The job, or null if there is nothing worth doing.
+     */
+    static PioneerJob findImprovement(Unit unit, Set<Tile> taken) {
+        final Player owner = unit.getOwner();
+        PioneerJob best = null;
+        double bestScore = 0.0;
+        for (Colony colony : owner.getColonyList()) {
+            for (ColonyTile ct : colony.getColonyTiles()) {
+                final Tile tile = ct.getWorkTile();
+                if (tile == null || taken.contains(tile)
+                    || tile.getOwningSettlement() != colony) continue;
+                final Unit worker = (ct.isEmpty()) ? null : ct.getFirstUnit();
+                for (TileImprovementType it : unit.getSpecification()
+                         .getTileImprovementTypeList()) {
+                    if (it.isNatural() || !it.isWorkerAllowed(unit)
+                        || !tile.isImprovementTypeAllowed(it)
+                        || tile.getTileImprovement(it) != null
+                        || it.getChange(tile.getType()) != null) continue;
+                    int value = 0;
+                    if (ct.isColonyCenterTile()) {
+                        for (ProductionType pt : ct.getAvailableProductionTypes(true)) {
+                            for (AbstractGoods ag : pt.getOutputList()) {
+                                value += 3 * it.getImprovementValue(tile,
+                                    ag.getType());
+                            }
+                        }
+                    } else if (worker != null && worker.getWorkType() != null) {
+                        value = 3 * it.getImprovementValue(tile,
+                            worker.getWorkType(), worker.getType());
+                    } else {
+                        for (ProductionType pt : ct.getAvailableProductionTypes(false)) {
+                            for (AbstractGoods ag : pt.getOutputList()) {
+                                value = Math.max(value, it.getImprovementValue(
+                                    tile, ag.getType()));
+                            }
+                        }
+                    }
+                    if (value <= 0) continue;
+                    int turns = 0;
+                    if (unit.getTile() != tile) {
+                        final PathNode path = unit.findPath(tile);
+                        if (path == null) continue;
+                        turns = path.getTotalTurns();
+                    }
+                    final double score = value / (double)(turns + 1);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = new PioneerJob(tile, it);
+                    }
+                }
+            }
+        }
+        return best;
     }
 
     /**
