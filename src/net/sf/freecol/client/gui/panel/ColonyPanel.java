@@ -1164,6 +1164,7 @@ public final class ColonyPanel extends PortPanel
         fillButton.addActionListener(fillCmd);
         warehouseButton.addActionListener(warehouseCmd);
         focusButton.addActionListener(focusCmd);
+        updateFocusButton();
         europeRouteButton.addActionListener(europeRouteCmd);
         europeRouteButton.setToolTipText(Messages.message("colonyPanel.europeRoute.tip"));
         focusButton.setToolTipText(Messages.message("colonyPanel.focus.tip"));
@@ -1278,16 +1279,40 @@ public final class ColonyPanel extends PortPanel
      */
     private void showFocusMenu() {
         final JPopupMenu menu = new JPopupMenu();
+        final ColonyFocus.Focus current = igc().getColonyFocus(getColony());
         for (ColonyFocus.Focus focus : ColonyFocus.Focus.values()) {
-            final JMenuItem item = new JMenuItem(Messages.message(focus.getKey()));
+            final JMenuItem item = new JMenuItem(((focus == current)
+                    ? "\u2713 " : "") + Messages.message(focus.getKey()));
             item.setToolTipText(Messages.message(focus.getKey() + ".tip"));
             item.addActionListener(ae -> {
                     igc().focusColony(getColony(), focus);
                     updateNetProductionPanel();
+                    updateFocusButton();
                 });
             menu.add(item);
         }
+        menu.addSeparator();
+        final JMenuItem manual = new JMenuItem(((current == null)
+                ? "\u2713 " : "") + Messages.message("colonyPanel.focus.manual"));
+        manual.setToolTipText(Messages.message("colonyPanel.focus.manual.tip"));
+        manual.addActionListener(ae -> {
+                igc().clearColonyFocus(getColony());
+                updateFocusButton();
+            });
+        menu.add(manual);
         menu.show(focusButton, 0, -menu.getPreferredSize().height);
+    }
+
+    /**
+     * Say on the focus button which focus the colony keeps, if any.
+     */
+    private void updateFocusButton() {
+        if (focusButton == null) return;
+        final ColonyFocus.Focus focus = igc().getColonyFocus(getColony());
+        focusButton.setText((focus == null)
+            ? Messages.message("colonyPanel.focus")
+            : Messages.message(StringTemplate.template("colonyPanel.focus.current")
+                .add("%focus%", focus.getKey())));
     }
 
     private JPanel wrapWithBorder(JComponent c) {

@@ -232,6 +232,14 @@ public final class InGameController extends FreeColClientHolder {
     /** Guards against resuming the pioneers within itself. */
     private boolean resumingPioneers = false;
 
+    /** The focus the player keeps for each colony, by colony id. */
+    private final HashMap<String, ColonyFocus.Focus> colonyFoci
+        = new HashMap<>();
+
+    /** How many colonists each such colony had when last arranged. */
+    private final HashMap<String, Integer> colonyFocusSizes
+        = new HashMap<>();
+
     /** The advisor helping the player learn the game. */
     private final Advisor advisor = new Advisor();
 
@@ -1466,7 +1474,50 @@ public final class InGameController extends FreeColClientHolder {
         }
         fireChanges(was.toArray(new ObjectWas[0]));
         updateGUI(null, false);
+        // Keep to it as the colony grows
+        colonyFoci.put(colony.getId(), focus);
+        colonyFocusSizes.put(colony.getId(), colony.getUnitCount());
         return moved;
+    }
+
+    /**
+     * Get the focus kept for a colony.
+     *
+     * @param colony The {@code Colony} to check.
+     * @return The {@code ColonyFocus.Focus}, or null if the player
+     *     places the colonists.
+     */
+    public ColonyFocus.Focus getColonyFocus(Colony colony) {
+        return (colony == null) ? null : colonyFoci.get(colony.getId());
+    }
+
+    /**
+     * Stop keeping a focus for a colony: the player places the
+     * colonists.
+     *
+     * @param colony The {@code Colony}.
+     */
+    public void clearColonyFocus(Colony colony) {
+        if (colony == null) return;
+        colonyFoci.remove(colony.getId());
+        colonyFocusSizes.remove(colony.getId());
+    }
+
+    /**
+     * Arrange again the colonies with a focus whose number of
+     * colonists has changed, so newcomers go where they should.
+     *
+     * @param player The {@code Player} whose colonies to arrange.
+     */
+    private void keepColonyFoci(Player player) {
+        for (Colony colony : player.getColonyList()) {
+            final ColonyFocus.Focus focus = colonyFoci.get(colony.getId());
+            if (focus == null) continue;
+            final Integer size = colonyFocusSizes.get(colony.getId());
+            if (size == null || size != colony.getUnitCount()) {
+                focusColony(colony, focus);
+            }
+        }
     }
 
     /**
@@ -5824,6 +5875,9 @@ public final class InGameController extends FreeColClientHolder {
 
             // Let the advisor add its tips and warnings to the report.
             advise(player);
+
+            // Colonies keeping a focus place their newcomers
+            keepColonyFoci(player);
 
             // Get turn report out quickly before more message display occurs.
             player.removeDisplayedModelMessages();
