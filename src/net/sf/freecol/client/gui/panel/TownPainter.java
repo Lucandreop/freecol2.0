@@ -1873,13 +1873,17 @@ public final class TownPainter {
             final BufferedImage image = pictures.apply(p);
             if (image == null) continue;
             final BufferedImage shadow = getSilhouette(image);
+            final double s = TownPlan.fit(image.getWidth(), image.getHeight(),
+                                          p.bounds.getSize());
             final int base = p.bounds.y + p.bounds.height;
-            final int x = p.bounds.x + (p.bounds.width - image.getWidth()) / 2;
+            final int x = p.bounds.x
+                + (p.bounds.width - (int)Math.round(image.getWidth() * s)) / 2;
             final Graphics2D g2d = (Graphics2D)g.create();
             try {
                 g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                 g2d.translate(x, base);
+                g2d.scale(s, s);
                 // Lay the picture down on the ground behind the building
                 g2d.transform(new AffineTransform(1, 0, -0.75, 0.38, 0, 0));
                 g2d.setComposite(AlphaComposite.getInstance(

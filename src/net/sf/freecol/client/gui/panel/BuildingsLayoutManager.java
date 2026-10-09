@@ -151,16 +151,21 @@ public class BuildingsLayoutManager implements LayoutManager {
         for (Component c : parent.getComponents()) {
             final BuildingType type;
             final boolean empty;
+            final Dimension site = c.getMinimumSize();
+            final Dimension floor;
             if (c instanceof ASingleBuildingPanel) {
                 type = ((ASingleBuildingPanel)c).getBuilding().getType();
                 empty = false;
+                // Room for the workers, whatever the picture
+                floor = ((ASingleBuildingPanel)c).getWorkerSize();
             } else if (c instanceof EmptyBuildingSite) {
                 type = ((EmptyBuildingSite)c).getBuildingType();
                 empty = true;
+                floor = new Dimension(site.width / 2, site.height / 2);
             } else {
                 return null;
             }
-            plots.add(new TownPlan.Plot(c, type, c.getMinimumSize(), empty,
+            plots.add(new TownPlan.Plot(c, type, site, floor, empty,
                                         index++));
         }
         return TownPlan.create(size, reservedTop, plots, minRoad, maxRoad,

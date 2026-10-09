@@ -2870,10 +2870,12 @@ public final class ColonyPanel extends PortPanel
                 final ImageLibrary lib = getImageLibrary();
                 final BufferedImage image = lib.getScaledBuildingEmptyLandImage();
                 final Dimension size = getSize();
-                g.drawImage(image,
-                        (size.width - image.getWidth()) / 2,
-                        size.height - image.getHeight(),
-                        this);
+                final double s = TownPlan.fit(image.getWidth(),
+                                              image.getHeight(), size);
+                final int w = (int)Math.round(image.getWidth() * s);
+                final int h = (int)Math.round(image.getHeight() * s);
+                g.drawImage(image, (size.width - w) / 2, size.height - h,
+                            w, h, null);
             }
         }
     }
