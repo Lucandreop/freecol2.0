@@ -89,5 +89,20 @@ public class ExploreTest extends FreeColTestCase {
         assertFalse("Stays on the water", target.isLand());
         assertTrue("Close enough to see it",
                    target.getDistanceTo(unknown) <= ship.getLineOfSight());
+
+        // Out by the high seas there is nothing to find: the unknown
+        // sea by the coast comes first
+        final Tile offshore = map.getTile(map.getWidth() - 1, 8);
+        assertTrue("High seas", offshore.isDirectlyHighSeasConnected());
+        offshore.setExplored(dutch, false);
+        final Tile coast = map.getTile(10, 3);
+        coast.setExplored(dutch, false);
+        unknown.setExplored(dutch, true);
+        final Tile next = InGameController.findExploreTarget(ship);
+        assertNotNull("Somewhere to go", next);
+        assertFalse("Not onto the high seas",
+                    next.isDirectlyHighSeasConnected());
+        assertTrue("Along the coast",
+                   next.getDistanceTo(coast) <= ship.getLineOfSight());
     }
 }

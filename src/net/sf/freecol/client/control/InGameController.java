@@ -1483,9 +1483,13 @@ public final class InGameController extends FreeColClientHolder {
     }
 
     /**
-     * Find the nearest tile from which a unit would see land or sea
-     * not yet explored, keeping clear of lost city rumours,
-     * settlements and foreign units.
+     * Find where an exploring unit should go next: the place within a
+     * few turns from which it would see the most land or sea not yet
+     * explored, soonest.  A ship keeps off the high seas, where there
+     * is nothing to find, and prefers to follow known coasts.  If
+     * there is no such place within a few turns, the nearest one at
+     * all.  Lost city rumours, settlements and foreign units are
+     * kept clear of.
      *
      * Package-visible for the test suite.
      *
@@ -1497,28 +1501,115 @@ public final class InGameController extends FreeColClientHolder {
         if (here == null) return null;
         final Player owner = unit.getOwner();
         final int radius = Math.max(1, unit.getLineOfSight());
-        final GoalDecider gd = new GoalDecider() {
-                private PathNode best = null;
+        final boolean naval = unit.isNaval();
+
+        // Weigh up every place within a few turns.  Nothing is ever
+        // the goal, so the whole area is searched.
+        final Tile[] best = { null };
+        final double[] bestScore = { 0.0 };
+        final GoalDecider weigh = new GoalDecider() {
+                @Override
+                public PathNode getGoal() { return null; }
+                @Override
+                public boolean hasSubGoals() { return true; }
+                @Override
+                public boolean check(Unit u, PathNode path) {
+                    // Goals are first checked with a fake, distant node
+                    if (path.getTurns() > EXPLORE_TURNS) return false;
+                    final Tile tile = path.getTile();
+                    if (!isExploreTarget(owner, tile, here, naval)
+                        || path.isOnCarrier()) return false;
+                    final int unseen = countUnexplored(owner, tile, radius);
+                    if (unseen == 0) return false;
+                    double score = unseen / (double)(path.getTurns() + 1);
+                    if (naval && isNearKnownLand(owner, tile)) score *= 3;
+                    if (score > bestScore[0]) {
+                        bestScore[0] = score;
+                        best[0] = tile;
+                    }
+                    return false;
+                }
+            };
+        unit.search(here, weigh, exploreCostDecider(unit), EXPLORE_TURNS,
+                    null);
+        if (best[0] != null) return best[0];
+
+        // Nothing close: the nearest place there is
+        final GoalDecider nearest = new GoalDecider() {
+                private PathNode found = null;
 
                 @Override
-                public PathNode getGoal() { return best; }
+                public PathNode getGoal() { return found; }
                 @Override
                 public boolean hasSubGoals() { return false; }
                 @Override
                 public boolean check(Unit u, PathNode path) {
                     final Tile tile = path.getTile();
-                    // The goal is checked before the cost of reaching it
-                    if (tile == null || tile == here || path.isOnCarrier()
-                        || !isClearToExplore(owner, tile)
-                        || !any(tile.getSurroundingTiles(1, radius),
-                                t -> !owner.hasExplored(t))) return false;
-                    best = path;
+                    if (!isExploreTarget(owner, tile, here, naval)
+                        || path.isOnCarrier()
+                        || countUnexplored(owner, tile, radius) == 0) {
+                        return false;
+                    }
+                    found = path;
                     return true;
                 }
             };
-        final PathNode path = unit.search(here, gd, exploreCostDecider(unit),
-                                          INFINITY, null);
+        final PathNode path = unit.search(here, nearest,
+            exploreCostDecider(unit), INFINITY, null);
         return (path == null) ? null : path.getLastNode().getTile();
+    }
+
+    /** How many turns ahead an explorer weighs up where to go. */
+    private static final int EXPLORE_TURNS = 6;
+
+    /**
+     * Could an explorer go to a tile?  It must be clear, not where
+     * the explorer is, and for a ship not on the high seas.
+     *
+     * @param owner The {@code Player} that owns the explorer.
+     * @param tile The {@code Tile} to check.
+     * @param here The {@code Tile} the explorer is on.
+     * @param naval True if the explorer is a ship.
+     * @return True if the explorer could go there.
+     */
+    private static boolean isExploreTarget(Player owner, Tile tile,
+                                           Tile here, boolean naval) {
+        // The goal is checked before the cost of reaching it, so the
+        // checks of the cost decider are needed here too
+        return tile != null && tile != here
+            && isClearToExplore(owner, tile)
+            && !(naval && tile.isDirectlyHighSeasConnected());
+    }
+
+    /**
+     * Count the tiles an explorer would see from a tile that are not
+     * explored yet.
+     *
+     * @param owner The {@code Player} that owns the explorer.
+     * @param tile The {@code Tile} to look from.
+     * @param radius How far the explorer sees.
+     * @return The number of tiles not yet explored.
+     */
+    private static int countUnexplored(Player owner, Tile tile, int radius) {
+        int n = 0;
+        for (Tile t : tile.getSurroundingTiles(1, radius)) {
+            if (!owner.hasExplored(t)) n++;
+        }
+        return n;
+    }
+
+    /**
+     * Is a tile near land the player knows of?
+     *
+     * @param owner The {@code Player} to check for.
+     * @param tile The {@code Tile} to check.
+     * @return True if there is explored land within two tiles.
+     */
+    private static boolean isNearKnownLand(Player owner, Tile tile) {
+        for (Tile t : tile.getSurroundingTiles(1, 2)) {
+            if (t.isLand() && owner.hasExplored(t)) return true;
+        }
+        return false;
     }
 
     /**
