@@ -96,14 +96,29 @@ public final class MonarchDialog extends DeprecatedFreeColDialog<Boolean> {
             ? Utility.localizedTextArea(messageId, 30)
             : Utility.localizedTextArea(StringTemplate.copy(messageId, template), 30);
         panel.add(text);
+
+        // A tax raise: say plainly what each answer costs
+        String yesText = (yesId == null) ? null : Messages.message(yesId);
+        String noText = Messages.message(noId);
+        if (template != null
+            && (action == MonarchAction.RAISE_TAX_ACT
+                || action == MonarchAction.RAISE_TAX_WAR)) {
+            panel.add(Utility.localizedTextArea(StringTemplate
+                    .copy("model.monarch.action.raiseTax.detail", template),
+                    30), "skip, gaptop 10");
+            yesText = Messages.message(StringTemplate
+                .copy("model.monarch.action.raiseTax.accept", template));
+            noText = Messages.message(StringTemplate
+                .copy("model.monarch.action.raiseTax.protest", template));
+        }
         panel.setSize(panel.getPreferredSize());
 
         List<ChoiceItem<Boolean>> c = choices();
-        if (yesId != null) {
-            c.add(new ChoiceItem<>(Messages.message(yesId), Boolean.TRUE)
+        if (yesText != null) {
+            c.add(new ChoiceItem<>(yesText, Boolean.TRUE)
                 .okOption());
         }
-        c.add(new ChoiceItem<>(Messages.message(noId), Boolean.FALSE)
+        c.add(new ChoiceItem<>(noText, Boolean.FALSE)
             .cancelOption().defaultOption());
 
         initializeDialog(frame, DialogType.QUESTION, false, panel,
