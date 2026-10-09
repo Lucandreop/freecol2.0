@@ -246,6 +246,10 @@ public class ClientOptions extends OptionGroup {
     public static final String GUI_SHOW_AGENDA
         = "model.option.guiShowAgenda";
 
+    /** Whether to guide a new player through the first steps. */
+    public static final String GUI_SHOW_GUIDE
+        = "model.option.guiShowGuide";
+
     /** The advisor tips already shown, comma separated (hidden). */
     public static final String TUTORIAL_TIPS_SEEN
         = "model.option.tutorialTipsSeen";

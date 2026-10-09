@@ -67,6 +67,9 @@ public final class TownPlan {
         /** The size of the site. */
         public final Dimension size;
 
+        /** The least size the site can shrink to. */
+        public final Dimension floor;
+
         /** True if nothing has been built on the site yet. */
         public final boolean empty;
 
@@ -91,12 +94,41 @@ public final class TownPlan {
          */
         public Plot(Component component, BuildingType type, Dimension size,
                     boolean empty, int index) {
+            this(component, type, size, size, empty, index);
+        }
+
+        /**
+         * Create a new building site that can shrink.
+         *
+         * @param component The component showing the site.
+         * @param type The type of building on the site.
+         * @param size The size of the site.
+         * @param floor The least size the site can shrink to.
+         * @param empty True if nothing has been built on the site yet.
+         * @param index The position of the site in the original list.
+         */
+        public Plot(Component component, BuildingType type, Dimension size,
+                    Dimension floor, boolean empty, int index) {
             this.component = component;
             this.type = type;
             this.size = size;
+            this.floor = floor;
             this.empty = empty;
             this.district = TownPlan.getDistrict(type);
             this.index = index;
+        }
+
+        /**
+         * Get a smaller copy of this site, no smaller than its floor.
+         *
+         * @param f How much to shrink, between 0 and 1.
+         * @return The smaller site.
+         */
+        Plot shrink(float f) {
+            final Dimension d = new Dimension(
+                Math.max(floor.width, Math.round(size.width * f)),
+                Math.max(floor.height, Math.round(size.height * f)));
+            return new Plot(component, type, d, floor, empty, index);
         }
 
         public District getDistrict() {
@@ -240,18 +272,41 @@ public final class TownPlan {
      * @param maxSky The greatest height of the land beyond the town.
      * @return The town plan, or null if the sites do not fit.
      */
+    /** How much the sites may shrink, tried in turn. */
+    private static final float[] SHRINK = { 1f, 0.9f, 0.8f, 0.7f, 0.6f };
+
     public static TownPlan create(Dimension size, Dimension reservedTop,
                                   List<Plot> plots, int minRoad,
                                   int maxRoad, int maxSky) {
         if (plots.isEmpty() || size.width <= 0 || size.height <= 0) {
             return null;
         }
-        for (int rows = 3; rows <= 5; rows++) {
-            TownPlan plan = tryRows(size, reservedTop, plots, minRoad,
-                                    maxRoad, maxSky, rows);
-            if (plan != null) return plan;
+        // A grown colony may not fit at full size: rather than lose
+        // the town, shrink the buildings a little at a time
+        for (float f : SHRINK) {
+            final List<Plot> sites = new ArrayList<>(plots.size());
+            for (Plot p : plots) sites.add((f < 1f) ? p.shrink(f) : p);
+            for (int rows = 3; rows <= 6; rows++) {
+                TownPlan plan = tryRows(size, reservedTop, sites, minRoad,
+                                        maxRoad, maxSky, rows);
+                if (plan != null) return plan;
+            }
         }
         return null;
+    }
+
+    /**
+     * How much a picture has to shrink to fit in a site.
+     *
+     * @param width The width of the picture.
+     * @param height The height of the picture.
+     * @param room The size of the site.
+     * @return The scale to draw the picture at, at most one.
+     */
+    public static double fit(int width, int height, Dimension room) {
+        if (width <= 0 || height <= 0) return 1.0;
+        return Math.min(1.0, Math.min(room.width / (double)width,
+                                      room.height / (double)height));
     }
 
     /**

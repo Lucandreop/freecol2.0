@@ -658,9 +658,14 @@ public final class InGameController extends Controller {
                 logger.finest("Ignoring tax raise, no goods to boycott.");
                 break;
             }
+            // Say what a protest would throw away, and where
             template = StringTemplate.template(messageId)
                 .addStringTemplate("%goods%", goods.getType().getLabel())
-                .addAmount("%amount%", taxRaise);
+                .addAmount("%amount%", taxRaise)
+                .addAmount("%goodsAmount%", Math.min(goods.getAmount(),
+                        GoodsContainer.CARGO_SIZE))
+                .addName("%colony%", (goods.getLocation() instanceof Colony)
+                    ? ((Colony)goods.getLocation()).getName() : "");
             if (action == MonarchAction.RAISE_TAX_WAR) {
                 template = template.add("%nation%",
                     Nation.getRandomNonPlayerNationNameKey(game, random));

@@ -23,7 +23,9 @@ import static net.sf.freecol.common.util.CollectionUtils.first;
 
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Graphics2D;
 import java.awt.Graphics;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
@@ -203,6 +205,15 @@ public class BuildingPanel extends MigPanel implements PropertyChangeListener {
         repaint();
     }
 
+    /**
+     * Get the room the workers and production of this building need.
+     *
+     * @return The least size of this panel, whatever the picture.
+     */
+    public Dimension getWorkerSize() {
+        return getImageLibrary().scale(unscaledMinimumWorkerAndProductionSize);
+    }
+
     private Dimension largestWidthAndHeight(Dimension d1, Dimension d2) {
         return new Dimension(Math.max(d1.width, d2.width), Math.max(d1.height, d2.height));
     }
@@ -263,10 +274,16 @@ public class BuildingPanel extends MigPanel implements PropertyChangeListener {
         final ImageLibrary lib = getImageLibrary();
         final BufferedImage image = lib.getScaledBuildingImage(building);
         final Dimension size = getSize();
-        g.drawImage(image,
-                (size.width - image.getWidth()) / 2,
-                size.height - image.getHeight(),
-                this);
+        // Shrunk to fit when the town is crowded
+        final double s = TownPlan.fit(image.getWidth(), image.getHeight(),
+                                      size);
+        final int w = (int)Math.round(image.getWidth() * s);
+        final int h = (int)Math.round(image.getHeight() * s);
+        if (s < 1.0) {
+            ((Graphics2D)g).setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        }
+        g.drawImage(image, (size.width - w) / 2, size.height - h, w, h, this);
     }
 
 

@@ -53,6 +53,7 @@ import net.sf.freecol.client.gui.action.DisplayTileTextAction.DisplayText;
 import net.sf.freecol.client.gui.action.EndTurnAction;
 import net.sf.freecol.client.gui.action.EuropeAction;
 import net.sf.freecol.client.gui.action.ExecuteGotoOrdersAction;
+import net.sf.freecol.client.gui.action.ExploreAction;
 import net.sf.freecol.client.gui.action.FindSettlementAction;
 import net.sf.freecol.client.gui.action.FortifyAction;
 import net.sf.freecol.client.gui.action.GotoAction;
@@ -84,6 +85,7 @@ import net.sf.freecol.client.gui.action.ReportRequirementsAction;
 import net.sf.freecol.client.gui.action.ReportTradeAction;
 import net.sf.freecol.client.gui.action.ReportTurnAction;
 import net.sf.freecol.client.gui.action.RetireAction;
+import net.sf.freecol.client.gui.action.SailToEuropeAction;
 import net.sf.freecol.client.gui.action.SaveAction;
 import net.sf.freecol.client.gui.action.SaveAndQuitAction;
 import net.sf.freecol.client.gui.action.SentryAction;
@@ -244,6 +246,8 @@ public class InGameMenuBar extends FreeColMenuBar {
 
         menu.add(getMenuItem(GotoAction.id));
         menu.add(getMenuItem(GotoTileAction.id));
+        menu.add(getMenuItem(ExploreAction.id));
+        menu.add(getMenuItem(SailToEuropeAction.id));
         menu.add(getMenuItem(ExecuteGotoOrdersAction.id));
         menu.add(getMenuItem(AssignTradeRouteAction.id));
 

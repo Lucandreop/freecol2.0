@@ -1269,6 +1269,24 @@ public class SwingGUI extends GUI {
      * {@inheritDoc}
      */
     @Override
+    public boolean startGotoAt(int x, int y) {
+        final Unit active = getActiveUnit();
+        final Tile tile = tileAt(x, y);
+        if (active == null || tile == null || !active.hasTile()
+            || active.getTile() == tile
+            || !getMyPlayer().owns(active)
+            || !getFreeColClient().currentPlayerIsMyPlayer()) return false;
+        if (isGotoStarted()) stopGoto();
+        startGoto();
+        updateGotoTile(tile);
+        repaint();
+        return true;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public void traverseGotoPath() {
         final Unit unit = getActiveUnit();
         if (unit == null || !isGotoStarted()) {

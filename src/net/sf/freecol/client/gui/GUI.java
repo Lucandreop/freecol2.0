@@ -1368,7 +1368,19 @@ public class GUI extends FreeColClientHolder {
      * @param y The x coordinate of the goto destination (pixels).
      */
     public void performGoto(int x, int y) {}
-    
+
+    /**
+     * Start showing the way the active unit would take to a point on
+     * the map, to send it there when the mouse button is let go.
+     *
+     * Used by: CanvasMouseListener
+     *
+     * @param x The x coordinate of the destination (pixels).
+     * @param y The y coordinate of the destination (pixels).
+     * @return True if the way is being shown.
+     */
+    public boolean startGotoAt(int x, int y) { return false; }
+
     /**
      * Send the active unit along the current goto path as far as possible.
      *

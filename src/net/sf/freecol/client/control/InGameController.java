@@ -23,6 +23,7 @@ import static net.sf.freecol.common.model.Constants.INFINITY;
 import static net.sf.freecol.common.model.Constants.STEAL_LAND;
 import static net.sf.freecol.common.util.CollectionUtils.allSame;
 import static net.sf.freecol.common.util.CollectionUtils.alwaysTrue;
+import static net.sf.freecol.common.util.CollectionUtils.any;
 import static net.sf.freecol.common.util.CollectionUtils.find;
 import static net.sf.freecol.common.util.CollectionUtils.none;
 import static net.sf.freecol.common.util.CollectionUtils.removeInPlace;
@@ -136,6 +137,9 @@ import net.sf.freecol.common.option.GameOptions;
 import net.sf.freecol.common.util.Introspector;
 import net.sf.freecol.common.util.LogBuilder;
 import net.sf.freecol.server.FreeColServer;
+import net.sf.freecol.common.model.pathfinding.CostDecider;
+import net.sf.freecol.common.model.pathfinding.CostDeciders;
+import net.sf.freecol.common.model.pathfinding.GoalDecider;
 
 
 /**
@@ -194,6 +198,13 @@ public final class InGameController extends FreeColClientHolder {
 
     /** The turn number dangerWarnedUnits applies to. */
     private int dangerWarnedTurn = -1;
+
+    /**
+     * Units exploring the map on their own, with the tile each is
+     * heading for.  A unit stops exploring when its destination is
+     * changed to anything else.
+     */
+    private final HashMap<Unit, Tile> explorers = new HashMap<>();
 
     /** The advisor helping the player learn the game. */
     private final Advisor advisor = new Advisor();
@@ -1181,8 +1192,11 @@ public final class InGameController extends FreeColClientHolder {
     private boolean moveToDestination(Unit unit, List<ModelMessage> messages) {
         final Player player = getMyPlayer();
         Location destination = unit.getDestination();
-        PathNode path;
+        PathNode path = null;
         boolean ret;
+        // Sent somewhere else since it set out to explore?
+        if (explorers.containsKey(unit)
+            && explorers.get(unit) != destination) explorers.remove(unit);
         if (!requireOurTurn()
             || unit.isAtSea()
             || unit.getMovesLeft() <= 0
@@ -1194,7 +1208,14 @@ public final class InGameController extends FreeColClientHolder {
             ret = true; // also invalid, but trade route check needed first
         } else if (!changeState(unit, UnitState.ACTIVE)) {
             ret = true; // another error case
-        } else if ((path = unit.findPath(destination)) == null) {
+        } else if (explorers.containsKey(unit)
+            && (path = unit.findPath(unit.getLocation(), destination, null,
+                    exploreCostDecider(unit), null)) == null) {
+            // The way is blocked, for now.  Try again next turn.
+            changeState(unit, UnitState.SKIPPED);
+            ret = true;
+        } else if (!explorers.containsKey(unit)
+            && (path = unit.findPath(destination)) == null) {
             // No path to destination. Give the player a chance to do
             // something about it, but default to skipping this unit as
             // the path blockage is most likely just transient
@@ -1218,6 +1239,9 @@ public final class InGameController extends FreeColClientHolder {
              * to the player (or we get an error message).
              */
             return true;
+        } else if (unit.isAtLocation(destination)
+            && explorers.containsKey(unit)) {
+            ret = continueExploring(unit);
         } else if (unit.isAtLocation(destination)) {
             final Colony colony = (unit.hasTile()) ? unit.getTile().getColony()
                 : null;
@@ -1360,6 +1384,327 @@ public final class InGameController extends FreeColClientHolder {
             }
         }
         return null;
+    }
+
+    /**
+     * Put the colonists of a colony where they make the most of a
+     * focus the player picked.
+     *
+     * Called from ColonyPanel.
+     *
+     * @param colony The {@code Colony} to arrange.
+     * @param focus The {@code ColonyFocus.Focus} to arrange it for.
+     * @return The number of colonists given new work.
+     */
+    public int focusColony(Colony colony, ColonyFocus.Focus focus) {
+        if (colony == null || !getMyPlayer().owns(colony)
+            || !requireOurTurn()) return 0;
+
+        final List<ColonyFocus.Assignment> todo
+            = new ArrayList<>(ColonyFocus.plan(colony, focus));
+        final List<ObjectWas> was = new ArrayList<>();
+        was.add(new ColonyWas(colony));
+        int moved = 0;
+        // A colonist can only move where there is room, so keep going
+        // while anyone can
+        boolean progress = true;
+        while (progress && !todo.isEmpty()) {
+            progress = false;
+            for (Iterator<ColonyFocus.Assignment> it = todo.iterator();
+                 it.hasNext();) {
+                final ColonyFocus.Assignment a = it.next();
+                if (a.unit.getLocation() != a.workLocation) {
+                    if (a.workLocation.isFull()) continue;
+                    was.add(new UnitWas(a.unit));
+                    if (!askServer().work(a.unit, a.workLocation)
+                        || a.unit.getLocation() != a.workLocation) {
+                        it.remove();
+                        continue;
+                    }
+                }
+                if (a.workType != null && a.unit.getWorkType() != a.workType) {
+                    askServer().changeWorkType(a.unit, a.workType);
+                }
+                it.remove();
+                moved++;
+                progress = true;
+            }
+        }
+        fireChanges(was.toArray(new ObjectWas[0]));
+        updateGUI(null, false);
+        return moved;
+    }
+
+    /**
+     * Send a unit to explore the map on its own, turn after turn,
+     * until there is nothing left within its reach.
+     *
+     * Called from ExploreAction.
+     *
+     * @param unit The {@code Unit} to explore with.
+     * @return True if the unit set out.
+     */
+    public boolean explore(Unit unit) {
+        if (unit == null || !getMyPlayer().owns(unit) || !unit.hasTile()
+            || unit.isOnCarrier() || !requireOurTurn()
+            || !getGUI().confirmClearTradeRoute(unit)) return false;
+
+        final Tile target = findExploreTarget(unit);
+        if (target == null) {
+            showInformationPanel(unit, StringTemplate
+                .template("explore.nothing")
+                .addStringTemplate("%unit%",
+                    unit.getLabel(Unit.UnitLabelType.NATIONAL)));
+            return false;
+        }
+        final UnitWas unitWas = new UnitWas(unit);
+        explorers.put(unit, target);
+        if (!askSetDestination(unit, target)) {
+            explorers.remove(unit);
+            return false;
+        }
+        moveToDestination(unit, null);
+        fireChanges(unitWas);
+        updateGUI(null, false);
+        return true;
+    }
+
+    /**
+     * Send a ship to Europe, the quickest way to the high seas.
+     *
+     * Called from SailToEuropeAction.
+     *
+     * @param unit The naval {@code Unit} to send.
+     * @return True if the ship set out.
+     */
+    public boolean sailToEurope(Unit unit) {
+        final Europe europe = getMyPlayer().getEurope();
+        if (unit == null || europe == null || !unit.isNaval()
+            || !unit.hasTile() || !getMyPlayer().owns(unit)
+            || !requireOurTurn()
+            || !getGUI().confirmClearTradeRoute(unit)) return false;
+
+        explorers.remove(unit);
+        final UnitWas unitWas = new UnitWas(unit);
+        if (!askSetDestination(unit, europe)) return false;
+        moveToDestination(unit, null);
+        fireChanges(unitWas);
+        updateGUI(null, false);
+        return true;
+    }
+
+    /**
+     * An exploring unit has reached the tile it was heading for:
+     * find the next one, or finish.  A ship that has nothing left to
+     * explore sails back to Europe.
+     *
+     * @param unit The exploring {@code Unit}.
+     * @return True if the unit carries on by itself, false if the
+     *     player should give it new orders.
+     */
+    private boolean continueExploring(Unit unit) {
+        final Player player = getMyPlayer();
+        explorers.remove(unit);
+        final Tile next = findExploreTarget(unit);
+        if (next != null) {
+            explorers.put(unit, next);
+            if (!askSetDestination(unit, next)) {
+                explorers.remove(unit);
+                return false;
+            }
+            return unit.getMovesLeft() <= 0 || moveToDestination(unit, null);
+        }
+
+        final Europe europe = player.getEurope();
+        final boolean home = unit.isNaval() && europe != null
+            && player.canMoveToEurope() && unit.getType().canMoveToHighSeas();
+        final ModelMessage m = new ModelMessage(MessageType.DEFAULT,
+            (home) ? "explore.toEurope" : "explore.done", unit)
+            .addStringTemplate("%unit%",
+                unit.getLabel(Unit.UnitLabelType.NATIONAL));
+        player.addModelMessage(m);
+        turnReportMessages.add(m);
+        if (home && askSetDestination(unit, europe)) {
+            return unit.getMovesLeft() <= 0 || moveToDestination(unit, null);
+        }
+        askClearGotoOrders(unit);
+        return false;
+    }
+
+    /**
+     * Find where an exploring unit should go next: the place within a
+     * few turns from which it would see the most land or sea not yet
+     * explored, soonest.  A ship keeps off the high seas, where there
+     * is nothing to find, and prefers to follow known coasts.  If
+     * there is no such place within a few turns, the nearest one at
+     * all.  Lost city rumours, settlements and foreign units are
+     * kept clear of.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param unit The {@code Unit} to explore with.
+     * @return The {@code Tile} to go to, or null if there is none.
+     */
+    static Tile findExploreTarget(Unit unit) {
+        final Tile here = unit.getTile();
+        if (here == null) return null;
+        final Player owner = unit.getOwner();
+        final int radius = Math.max(1, unit.getLineOfSight());
+        final boolean naval = unit.isNaval();
+
+        // Weigh up every place within a few turns.  Nothing is ever
+        // the goal, so the whole area is searched.
+        final Tile[] best = { null };
+        final double[] bestScore = { 0.0 };
+        final GoalDecider weigh = new GoalDecider() {
+                @Override
+                public PathNode getGoal() { return null; }
+                @Override
+                public boolean hasSubGoals() { return true; }
+                @Override
+                public boolean check(Unit u, PathNode path) {
+                    // Goals are first checked with a fake, distant node
+                    if (path.getTurns() > EXPLORE_TURNS) return false;
+                    final Tile tile = path.getTile();
+                    if (!isExploreTarget(owner, tile, here, naval)
+                        || path.isOnCarrier()) return false;
+                    final int unseen = countUnexplored(owner, tile, radius);
+                    if (unseen == 0) return false;
+                    double score = unseen / (double)(path.getTurns() + 1);
+                    if (naval && isNearKnownLand(owner, tile)) score *= 3;
+                    if (score > bestScore[0]) {
+                        bestScore[0] = score;
+                        best[0] = tile;
+                    }
+                    return false;
+                }
+            };
+        unit.search(here, weigh, exploreCostDecider(unit), EXPLORE_TURNS,
+                    null);
+        if (best[0] != null) return best[0];
+
+        // Nothing close: the nearest place there is
+        final GoalDecider nearest = new GoalDecider() {
+                private PathNode found = null;
+
+                @Override
+                public PathNode getGoal() { return found; }
+                @Override
+                public boolean hasSubGoals() { return false; }
+                @Override
+                public boolean check(Unit u, PathNode path) {
+                    final Tile tile = path.getTile();
+                    if (!isExploreTarget(owner, tile, here, naval)
+                        || path.isOnCarrier()
+                        || countUnexplored(owner, tile, radius) == 0) {
+                        return false;
+                    }
+                    found = path;
+                    return true;
+                }
+            };
+        final PathNode path = unit.search(here, nearest,
+            exploreCostDecider(unit), INFINITY, null);
+        return (path == null) ? null : path.getLastNode().getTile();
+    }
+
+    /** How many turns ahead an explorer weighs up where to go. */
+    private static final int EXPLORE_TURNS = 6;
+
+    /**
+     * Could an explorer go to a tile?  It must be clear, not where
+     * the explorer is, and for a ship not on the high seas.
+     *
+     * @param owner The {@code Player} that owns the explorer.
+     * @param tile The {@code Tile} to check.
+     * @param here The {@code Tile} the explorer is on.
+     * @param naval True if the explorer is a ship.
+     * @return True if the explorer could go there.
+     */
+    private static boolean isExploreTarget(Player owner, Tile tile,
+                                           Tile here, boolean naval) {
+        // The goal is checked before the cost of reaching it, so the
+        // checks of the cost decider are needed here too
+        return tile != null && tile != here
+            && isClearToExplore(owner, tile)
+            && !(naval && tile.isDirectlyHighSeasConnected());
+    }
+
+    /**
+     * Count the tiles an explorer would see from a tile that are not
+     * explored yet.
+     *
+     * @param owner The {@code Player} that owns the explorer.
+     * @param tile The {@code Tile} to look from.
+     * @param radius How far the explorer sees.
+     * @return The number of tiles not yet explored.
+     */
+    private static int countUnexplored(Player owner, Tile tile, int radius) {
+        int n = 0;
+        for (Tile t : tile.getSurroundingTiles(1, radius)) {
+            if (!owner.hasExplored(t)) n++;
+        }
+        return n;
+    }
+
+    /**
+     * Is a tile near land the player knows of?
+     *
+     * @param owner The {@code Player} to check for.
+     * @param tile The {@code Tile} to check.
+     * @return True if there is explored land within two tiles.
+     */
+    private static boolean isNearKnownLand(Player owner, Tile tile) {
+        for (Tile t : tile.getSurroundingTiles(1, 2)) {
+            if (t.isLand() && owner.hasExplored(t)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Can an exploring unit pass a tile without having to deal with
+     * anything there: a lost city rumour, a settlement that is not
+     * its owner's, or foreign units?
+     *
+     * @param owner The {@code Player} that owns the exploring unit.
+     * @param tile The {@code Tile} to check.
+     * @return True if the tile is clear.
+     */
+    private static boolean isClearToExplore(Player owner, Tile tile) {
+        return !tile.hasLostCityRumour()
+            && (!tile.hasSettlement() || owner.owns(tile.getSettlement()))
+            && none(tile.getUnitList(), u -> !owner.owns(u));
+    }
+
+    /**
+     * Get the costs of moving for an exploring unit, which keeps
+     * clear of anything it would have to deal with: lost city
+     * rumours, settlements that are not its owner's, and foreign
+     * units.
+     *
+     * @param unit The exploring {@code Unit}.
+     * @return A {@code CostDecider} for the unit.
+     */
+    private static CostDecider exploreCostDecider(final Unit unit) {
+        final CostDecider base = CostDeciders.defaultCostDeciderFor(unit);
+        final Player owner = unit.getOwner();
+        return new CostDecider() {
+            @Override
+            public int getCost(Unit u, Location oldLocation,
+                               Location newLocation, int movesLeft) {
+                final Tile tile = newLocation.getTile();
+                if (tile != null && !isClearToExplore(owner, tile)) {
+                    return ILLEGAL_MOVE;
+                }
+                return base.getCost(u, oldLocation, newLocation, movesLeft);
+            }
+
+            @Override
+            public int getMovesLeft() { return base.getMovesLeft(); }
+
+            @Override
+            public int getNewTurns() { return base.getNewTurns(); }
+        };
     }
 
     /**
@@ -1917,6 +2262,8 @@ public final class InGameController extends FreeColClientHolder {
                 return moveTowardEurope(unit, (Europe)stop.getLocation());
             } else if (unit.getDestination() instanceof Europe) {
                 return moveTowardEurope(unit, (Europe)unit.getDestination());
+            } else if (explorers.containsKey(unit)) {
+                return moveTile(unit, direction);
             } else if (getGUI().modalConfirmDialog(oldTile, StringTemplate
                     .template("highseas.text")
                     .addAmount("%number%", unit.getSailTurns()),

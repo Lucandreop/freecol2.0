@@ -60,7 +60,13 @@ public final class CanvasMouseListener extends FreeColClientHolder implements Mo
     public void mousePressed(MouseEvent e) {
         if (!e.getComponent().isEnabled()) return;
         final GUI gui = getGUI();
-        
+
+        // As in Civilization: hold the right button where the selected
+        // unit should go to see the way, and let go to send it there.
+        // On the unit itself, or with shift, the menu of the tile.
+        if (e.getButton() == MouseEvent.BUTTON3 && !e.isShiftDown()
+            && gui.startGotoAt(e.getX(), e.getY())) return;
+
         if (e.isPopupTrigger()) {
             gui.showTilePopup(gui.tileAt(e.getX(), e.getY()));
             return;
@@ -95,6 +101,12 @@ public final class CanvasMouseListener extends FreeColClientHolder implements Mo
      */
     public void mouseReleased(MouseEvent e) {
         if (!e.getComponent().isEnabled()) return;
+
+        // Letting go of the right button sends the unit where it points
+        if (e.getButton() == MouseEvent.BUTTON3) {
+            if (getGUI().isGotoStarted()) getGUI().traverseGotoPath();
+            return;
+        }
 
         // Only process release of Button1 for drag-and-release gotos
         if (e.getButton() != MouseEvent.BUTTON1) return;

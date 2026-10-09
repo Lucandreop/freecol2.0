@@ -127,6 +127,7 @@ import net.sf.freecol.common.model.UnitLocation.NoAddReason;
 import net.sf.freecol.common.model.UnitType;
 import net.sf.freecol.common.model.WorkLocation;
 import net.sf.freecol.common.util.ImageUtils;
+import net.sf.freecol.client.control.ColonyFocus;
 
 
 /**
@@ -162,6 +163,10 @@ public final class ColonyPanel extends PortPanel
             .withButtonStyle(ButtonStyle.SIMPLE);
 
     private JButton buildQueueButton = new FreeColButton(Messages.message("colonyPanel.buildQueue"))
+            .withButtonStyle(ButtonStyle.SIMPLE);
+
+    /** Puts the colonists where they make the most of a focus. */
+    private JButton focusButton = new FreeColButton(Messages.message("colonyPanel.focus"))
             .withButtonStyle(ButtonStyle.SIMPLE);
 
     private JButton colonyUnitsButton = new FreeColButton(Messages.message("colonyPanel.colonyUnits"))
@@ -241,6 +246,8 @@ public final class ColonyPanel extends PortPanel
         fillButton.setEnabled(false);
     };
 
+    private final ActionListener focusCmd = ae -> showFocusMenu();
+
     private final ActionListener warehouseCmd = ae -> {
         getGUI().showWarehouseDialog(getColony(), updated -> {
             if (updated) {
@@ -291,6 +298,7 @@ public final class ColonyPanel extends PortPanel
      */
     public ColonyPanel(FreeColClient freeColClient, Colony colony) {
         super(freeColClient, new MigLayout());
+        GuidePanel.mark("colony");
 
         getMigLayout().setLayoutConstraints("fill, wrap 2, insets 0, gap 0 0");
         getMigLayout().setColumnConstraints("[fill][474!]");
@@ -1145,6 +1153,8 @@ public final class ColonyPanel extends PortPanel
         unloadButton.addActionListener(unloadCmd);
         fillButton.addActionListener(fillCmd);
         warehouseButton.addActionListener(warehouseCmd);
+        focusButton.addActionListener(focusCmd);
+        focusButton.setToolTipText(Messages.message("colonyPanel.focus.tip"));
         buildQueueButton.addActionListener(buildQueueCmd);
         colonyUnitsButton.addActionListener(colonyUnitsCmd);
         if (setGoodsButton != null) {
@@ -1157,6 +1167,7 @@ public final class ColonyPanel extends PortPanel
         unloadButton.setEnabled(isEditable());
         fillButton.setEnabled(isEditable());
         warehouseButton.setEnabled(isEditable());
+        focusButton.setEnabled(isEditable());
         buildQueueButton.setEnabled(isEditable());
         colonyUnitsButton.setEnabled(isEditable());
         if (setGoodsButton != null) {
@@ -1224,6 +1235,7 @@ public final class ColonyPanel extends PortPanel
         add(warehouseScroll, "span, split, height 48:, grow, gap 0 0 0 0, sgy bottomRow");
         
         add(wrapWithBorder(warehouseButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
+        add(wrapWithBorder(focusButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
         
         if (setGoodsButton != null) {
             add(wrapWithBorder(setGoodsButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
@@ -1247,6 +1259,24 @@ public final class ColonyPanel extends PortPanel
         update();
     }
     
+    /**
+     * Offer the foci the colonists can be arranged for, under the
+     * focus button.
+     */
+    private void showFocusMenu() {
+        final JPopupMenu menu = new JPopupMenu();
+        for (ColonyFocus.Focus focus : ColonyFocus.Focus.values()) {
+            final JMenuItem item = new JMenuItem(Messages.message(focus.getKey()));
+            item.setToolTipText(Messages.message(focus.getKey() + ".tip"));
+            item.addActionListener(ae -> {
+                    igc().focusColony(getColony(), focus);
+                    updateNetProductionPanel();
+                });
+            menu.add(item);
+        }
+        menu.show(focusButton, 0, -menu.getPreferredSize().height);
+    }
+
     private JPanel wrapWithBorder(JComponent c) {
         final JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(FreeColImageBorder.woodenPanelBorder);
@@ -1261,6 +1291,7 @@ public final class ColonyPanel extends PortPanel
         unloadButton.removeActionListener(unloadCmd);
         fillButton.removeActionListener(fillCmd);
         warehouseButton.removeActionListener(warehouseCmd);
+        focusButton.removeActionListener(focusCmd);
         buildQueueButton.removeActionListener(buildQueueCmd);
         colonyUnitsButton.removeActionListener(colonyUnitsCmd);
         if (setGoodsButton != null) {
@@ -1869,6 +1900,7 @@ public final class ColonyPanel extends PortPanel
         unloadButton = null;
         fillButton = null;
         warehouseButton = null;
+        focusButton = null;
         buildQueueButton = null;
         colonyUnitsButton = null;
         setGoodsButton = null;
@@ -2870,10 +2902,12 @@ public final class ColonyPanel extends PortPanel
                 final ImageLibrary lib = getImageLibrary();
                 final BufferedImage image = lib.getScaledBuildingEmptyLandImage();
                 final Dimension size = getSize();
-                g.drawImage(image,
-                        (size.width - image.getWidth()) / 2,
-                        size.height - image.getHeight(),
-                        this);
+                final double s = TownPlan.fit(image.getWidth(),
+                                              image.getHeight(), size);
+                final int w = (int)Math.round(image.getWidth() * s);
+                final int h = (int)Math.round(image.getHeight() * s);
+                g.drawImage(image, (size.width - w) / 2, size.height - h,
+                            w, h, null);
             }
         }
     }

@@ -119,9 +119,18 @@ public class NewUnitPanel extends FreeColPanel {
                 .addAmount("%amount%", price));
             gold.setEnabled(enable);
             newButton.setEnabled(enable);
-            newButton.add(new JLabel(icon), "span 1 2");
+            newButton.add(new JLabel(icon), "span 1 " + ((ut.isNaval()) ? 3 : 2));
             newButton.add(name);
             newButton.add(gold);
+            if (ut.isNaval()) {
+                // Bigger ships carry more men and goods
+                JLabel hold = Utility.localizedLabel(StringTemplate
+                    .template("newUnitPanel.ship")
+                    .addAmount("%space%", ut.getSpace())
+                    .addAmount("%moves%", ut.getMovement() / 3));
+                hold.setEnabled(enable);
+                newButton.add(hold);
+            }
             newButton.setActionCommand(ut.getId());
             newButton.addActionListener(this);
             buttons.add(newButton);

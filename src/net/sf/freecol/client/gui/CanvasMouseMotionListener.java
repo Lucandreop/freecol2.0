@@ -63,10 +63,15 @@ public final class CanvasMouseMotionListener extends FreeColClientHolder impleme
     @Override
     public void mouseDragged(MouseEvent me) {
         // getButton does not work here, TODO: find out why
+        if ((me.getModifiersEx() & MouseEvent.BUTTON3_DOWN_MASK) != 0) {
+            // Following the way to where the right button points
+            getGUI().updateGoto(me.getX(), me.getY(), false);
+            return;
+        }
         if ((me.getModifiersEx() & MouseEvent.BUTTON1_DOWN_MASK) != MouseEvent.BUTTON1_DOWN_MASK) {
             return;
         }
-        
+
         scrolling.performDragScrollIfActive(me);
 
         getGUI().updateGoto(me.getX(), me.getY(), true);

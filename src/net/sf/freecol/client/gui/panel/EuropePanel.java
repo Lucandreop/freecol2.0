@@ -29,6 +29,8 @@ import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.util.List;
 import java.util.logging.Level;
@@ -420,6 +422,18 @@ public final class EuropePanel extends PortPanel {
                 MarketLabel label = new MarketLabel(fcc, goodsType, market);
                 label.setTransferHandler(defaultTransferHandler);
                 label.addMouseListener(pressListener);
+                // A double click buys a load for the ship in port
+                label.addMouseListener(new MouseAdapter() {
+                        @Override
+                        public void mouseClicked(MouseEvent e) {
+                            final Unit carrier = cargoPanel.getCarrier();
+                            if (e.getClickCount() == 2
+                                && e.getButton() == MouseEvent.BUTTON1
+                                && carrier != null && carrier.isInEurope()) {
+                                label.addCargo(label, carrier, cargoPanel);
+                            }
+                        }
+                    });
                 MarketData md = market.getMarketData(goodsType);
                 if (md != null) md.addPropertyChangeListener(label);
                 add(label);
@@ -684,6 +698,7 @@ public final class EuropePanel extends PortPanel {
     public EuropePanel(FreeColClient freeColClient, boolean header) {
         super(freeColClient, new MigLayout("wrap 3, fill",
                                            "[30%:][30%:][15%:]"));
+        GuidePanel.mark("europe");
 
         exitButton = new EuropeButton(Messages.message("close"),
             KeyEvent.VK_ESCAPE, EuropeAction.EXIT.toString(),
@@ -808,6 +823,11 @@ public final class EuropePanel extends PortPanel {
         add(inPortScroll, "sg, height 15%:, grow");
         add(docksScroll, "spany 2, grow");
         add(cargoScroll, "height 10%:, grow");
+        // How to buy and sell, which is not obvious
+        final JLabel marketHint = new JLabel(Messages.message("europePanel.marketHint"));
+        marketHint.setFont(FontLibrary.getScaledFont("simple-plain-tiny"));
+        marketHint.setForeground(PortPainter.INK);
+        add(marketHint, "span, center, gaptop 2");
         add(marketScroll, "span, height 10%:, grow");
 
         add(recruitButton, "span, split 6");
