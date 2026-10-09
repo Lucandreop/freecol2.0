@@ -29,6 +29,7 @@ public class AllTests {
         TestSuite suite = new TestSuite("Test for net.sf.freecol.client.control");
         //$JUnit-BEGIN$
         suite.addTestSuite(AdvisorTest.class);
+        suite.addTestSuite(ColonyFocusTest.class);
         suite.addTestSuite(ExploreTest.class);
         suite.addTestSuite(MoveTest.class);
         suite.addTestSuite(RouteDangerTest.class);

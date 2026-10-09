@@ -1387,6 +1387,55 @@ public final class InGameController extends FreeColClientHolder {
     }
 
     /**
+     * Put the colonists of a colony where they make the most of a
+     * focus the player picked.
+     *
+     * Called from ColonyPanel.
+     *
+     * @param colony The {@code Colony} to arrange.
+     * @param focus The {@code ColonyFocus.Focus} to arrange it for.
+     * @return The number of colonists given new work.
+     */
+    public int focusColony(Colony colony, ColonyFocus.Focus focus) {
+        if (colony == null || !getMyPlayer().owns(colony)
+            || !requireOurTurn()) return 0;
+
+        final List<ColonyFocus.Assignment> todo
+            = new ArrayList<>(ColonyFocus.plan(colony, focus));
+        final List<ObjectWas> was = new ArrayList<>();
+        was.add(new ColonyWas(colony));
+        int moved = 0;
+        // A colonist can only move where there is room, so keep going
+        // while anyone can
+        boolean progress = true;
+        while (progress && !todo.isEmpty()) {
+            progress = false;
+            for (Iterator<ColonyFocus.Assignment> it = todo.iterator();
+                 it.hasNext();) {
+                final ColonyFocus.Assignment a = it.next();
+                if (a.unit.getLocation() != a.workLocation) {
+                    if (a.workLocation.isFull()) continue;
+                    was.add(new UnitWas(a.unit));
+                    if (!askServer().work(a.unit, a.workLocation)
+                        || a.unit.getLocation() != a.workLocation) {
+                        it.remove();
+                        continue;
+                    }
+                }
+                if (a.workType != null && a.unit.getWorkType() != a.workType) {
+                    askServer().changeWorkType(a.unit, a.workType);
+                }
+                it.remove();
+                moved++;
+                progress = true;
+            }
+        }
+        fireChanges(was.toArray(new ObjectWas[0]));
+        updateGUI(null, false);
+        return moved;
+    }
+
+    /**
      * Send a unit to explore the map on its own, turn after turn,
      * until there is nothing left within its reach.
      *
