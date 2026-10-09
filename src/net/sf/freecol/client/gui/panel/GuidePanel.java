@@ -97,6 +97,9 @@ public final class GuidePanel extends JPanel {
     /** The step last laid out. */
     private Step shown = null;
 
+    /** The variant of the step last laid out. */
+    private String shownVariant = "";
+
     /** Where the units stood when the player was asked to move. */
     private final Map<Unit, Tile> startTiles = new HashMap<>();
 
@@ -163,8 +166,10 @@ public final class GuidePanel extends JPanel {
             stop();
             return;
         }
-        if (step == shown) return;
+        final String variant = getVariant(step, player);
+        if (step == shown && variant.equals(shownVariant)) return;
         shown = step;
+        shownVariant = variant;
         layoutStep();
         // The agenda may come or go with the step
         freeColClient.getGUI().updateMapControls();
@@ -258,6 +263,30 @@ public final class GuidePanel extends JPanel {
     }
 
     /**
+     * Get what a step should say as things stand: founding a colony
+     * needs a colonist with moves left, and landing uses them up.
+     *
+     * @param s The {@code Step}.
+     * @param player The {@code Player} being guided.
+     * @return A suffix for the message key of the text, maybe empty.
+     */
+    private String getVariant(Step s, Player player) {
+        if (s != Step.FOUND) return "";
+        final Unit active = freeColClient.getGUI().getActiveUnit();
+        if (active != null && active.canBuildColony()) return "";
+        boolean landed = false, ready = false;
+        for (Unit u : player.getUnitSet()) {
+            if (u.isNaval() || u.isOnCarrier() || !u.hasTile()
+                || !u.getTile().isLand() || !u.getType().canBuildColony()) {
+                continue;
+            }
+            landed = true;
+            if (u.getMovesLeft() > 0) ready = true;
+        }
+        return (ready) ? ".select" : (landed) ? ".wait" : "";
+    }
+
+    /**
      * Is any colonist of a player standing on land?
      *
      * @param player The {@code Player} to check.
@@ -295,7 +324,8 @@ public final class GuidePanel extends JPanel {
         title.setForeground(INK);
         add(title, "gaptop " + lib.scaleInt(2));
 
-        final JTextArea text = new JTextArea(Messages.message(step.getKey() + ".text"));
+        final JTextArea text = new JTextArea(Messages.message(step.getKey()
+                + ".text" + shownVariant));
         text.setFont(plain);
         text.setForeground(INK);
         text.setOpaque(false);

@@ -590,6 +590,9 @@ public class SwingGUI extends GUI {
     /**
      * Starts a goto operation.
      */
+    /** The tile last pointed at during a goto, valid path or not. */
+    private Tile gotoTarget = null;
+
     private void startGoto() {
         this.gotoStarted = true;
         this.canvas.setCursor(Canvas.GO_CURSOR);
@@ -619,6 +622,7 @@ public class SwingGUI extends GUI {
      * @param tile The new goto {@code Tile}.
      */     
     private void updateGotoTile(Tile tile) {
+        this.gotoTarget = tile;
         final Unit unit = getActiveUnit();
         if (tile == null || unit == null) {
             clearGotoPath();
@@ -1320,11 +1324,19 @@ public class SwingGUI extends GUI {
         if (unit == null || !isGotoStarted()) {
             return;
         }
-        
+
         setUnitPath(null);
 
         final PathNode path = stopGoto();
-        if (path == null) {
+        final Tile target = this.gotoTarget;
+        this.gotoTarget = null;
+        if (path == null && unit.isNaval() && unit.hasTile()
+            && unit.getUnitCount() > 0 && target != null && target.isLand()
+            && unit.getTile().isAdjacent(target)) {
+            // A ship pointed at the land beside it: put people ashore
+            igc().moveDirection(unit, unit.getTile().getDirection(target),
+                                true);
+        } else if (path == null) {
             igc().clearGotoOrders(unit);
         } else {
             igc().goToTile(unit, path);
