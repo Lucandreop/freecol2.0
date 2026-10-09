@@ -19,10 +19,16 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
 - ✅ Tela da Europa como mesa de comerciante
 - ✅ Explorar sozinho (tropas e navios) e Navegar para a Europa num clique
 - ✅ Linha da Europa na agenda, com os colonos esperando no cais
+- ✅ Mover com o botão direito, como no Civilization
+- ✅ Guia do iniciante, que pode ser pulado
+- ✅ Encontro com outros europeus simplificado
+- ✅ Europa clara: como comprar e vender, e os espaços de cada navio
+- ✅ Protesto contra a Coroa diz o que vai ser jogado fora
+- ✅ Tela inicial com menos coisas ao mesmo tempo
 
 ## Fase 1 — Menos trabalho braçal
 
-- 🔨 **Foco da colônia**: botões Equilíbrio / Comida / Martelos / Sinos que distribuem os colonos sozinhos
+- ✅ **Foco da colônia**: botões Equilíbrio / Comida / Martelos / Sinos que distribuem os colonos sozinhos
 - ⬜ **Mover em grupo**: todas as unidades de uma casa vão juntas para um destino
 - ⬜ **Rota colônia ↔ Europa num clique**: vende o excedente e traz os colonos do cais
 - ⬜ **Pioneiro automático**: melhora os terrenos das colônias sozinho
