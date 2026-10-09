@@ -30,9 +30,9 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
 
 - ✅ **Foco da colônia**: botões Equilíbrio / Comida / Martelos / Sinos que distribuem os colonos sozinhos
 - ✅ **Mover em grupo**: Ctrl + botão direito leva todas as unidades da casa
-- ⬜ **Rota colônia ↔ Europa num clique**: vende o excedente e traz os colonos do cais
-- ⬜ **Pioneiro automático**: melhora os terrenos das colônias sozinho
-- ⬜ Foco da colônia que se mantém: os colonos novos já entram no lugar certo
+- ✅ **Rota colônia ↔ Europa num clique**: vende o excedente e traz os colonos do cais
+- ✅ **Pioneiro automático**: melhora os terrenos das colônias sozinho
+- ✅ Foco da colônia que se mantém: os colonos novos já entram no lugar certo
 
 ## Fase 2 — Menos interrupções
 
@@ -43,9 +43,16 @@ Legenda: ✅ feito · 🔨 em andamento · ⬜ a fazer
 - ⬜ "Decidir depois" nas janelas que não precisam de resposta na hora
 - ⬜ Diário da partida: o jogo grava tempo por turno, ordens dadas e janelas abertas, para medir onde cansa
 
-## Fase 3 — Um meio de jogo vivo
+## Fase 3 — Um meio de jogo vivo, com a história da colonização
 
-- ⬜ **Acontecimentos**: tempestade, epidemia, piratas na costa, revolta de colonos leais à Coroa, imigrante famoso, contrato de compra
+Plano detalhado em `HISTORIA.md`.
+
+- ⬜ **Dilemas históricos**: o tempo da fome, a varíola nas aldeias, os peregrinos, a febre do ouro, o contrabando
+- ⬜ **A Gazeta**: os fatos reais do período no ano em que aconteceram, e as notícias das outras nações
+- ⬜ Personagens de verdade: retratos, frases e biografias dos Pais Fundadores; imigrantes famosos
+- ⬜ **Carta régia** no início: companhia de comércio, colônia religiosa, colônia real, capitania hereditária
+- ⬜ Diário de bordo da partida, no tom da época
+
 - ⬜ Freios visíveis: avisar quando o Rei reforça o exército, e por quê
 - ⬜ Tendência dos preços no mercado (subindo, caindo)
 - ⬜ Números que explicam: passar o mouse e ver de onde vem cada parte da produção
