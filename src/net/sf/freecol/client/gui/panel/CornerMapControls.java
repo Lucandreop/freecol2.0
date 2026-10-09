@@ -46,6 +46,9 @@ import net.sf.freecol.common.model.Tile;
 import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.resources.PropertyList;
 import net.sf.freecol.common.resources.ResourceManager;
+import java.awt.Container;
+import javax.swing.Action;
+import net.sf.freecol.client.gui.action.FreeColAction;
 
 
 /**
@@ -246,12 +249,16 @@ public final class CornerMapControls extends MapControls {
                 ret.add(this.compassRose);
             }
             
-            if (showAgenda() && !this.agendaPanel.isShowing()) {
+            // Never hand back a card already on the canvas, even if
+            // it is hidden for now
+            if (showAgenda() && this.agendaPanel.getParent() == null) {
                 this.agendaPanel.refresh();
                 this.agendaPanel.setLocation(lib.scaleInt(8), lib.scaleInt(8));
+                this.agendaPanel.setVisible(!this.guidePanel.hidesAgenda());
                 ret.add(this.agendaPanel);
             }
-            if (this.guidePanel.isWanted() && !this.guidePanel.isShowing()) {
+            if (this.guidePanel.isWanted()
+                && this.guidePanel.getParent() == null) {
                 this.guidePanel.refresh();
                 this.guidePanel.setLocation(
                     (cw - this.guidePanel.getWidth()) / 2, lib.scaleInt(8));
@@ -332,8 +339,8 @@ public final class CornerMapControls extends MapControls {
         final boolean rose = getClientOptions()
             .getBoolean(ClientOptions.DISPLAY_COMPASS_ROSE);
         if (rose && this.compassRose.isShowing()) ret.add(this.compassRose);
-        if (this.agendaPanel.isShowing()) ret.add(this.agendaPanel);
-        if (this.guidePanel.isShowing()) ret.add(this.guidePanel);
+        if (this.agendaPanel.getParent() != null) ret.add(this.agendaPanel);
+        if (this.guidePanel.getParent() != null) ret.add(this.guidePanel);
         for (UnitButton ub : this.unitButtons) {
             if (ub.isShowing()) ret.add(ub);
         }
@@ -358,14 +365,52 @@ public final class CornerMapControls extends MapControls {
     public void update(GUI.ViewMode viewMode, Unit active, Tile tile) {
         super.update(viewMode, active, tile);
         // Things move on as units move and turns end
-        if (this.agendaPanel.isShowing()) {
-            if (showAgenda()) {
-                this.agendaPanel.refresh();
-            } else {
-                this.agendaPanel.setSize(0, 0);
-            }
+        if (this.guidePanel.getParent() != null) this.guidePanel.refresh();
+        if (this.agendaPanel.getParent() != null) {
+            // Hidden while the guide teaches the first steps
+            final boolean wanted = showAgenda()
+                && !this.guidePanel.hidesAgenda();
+            this.agendaPanel.setVisible(wanted);
+            if (wanted) this.agendaPanel.refresh();
+            this.guidePanel.place();
         }
-        if (this.guidePanel.isShowing()) this.guidePanel.refresh();
+
+        // Only the orders the unit can carry out, side by side
+        if (active != null && !this.unitButtons.isEmpty()) {
+            for (UnitButton ub : this.unitButtons) {
+                final Action a = ub.getAction();
+                if (a instanceof FreeColAction) ((FreeColAction)a).update();
+                ub.setVisible(a != null && a.isEnabled());
+            }
+            layoutVisibleUnitButtons();
+        }
+    }
+
+    /**
+     * Lay out the unit buttons that are visible in one row, between
+     * the mini map and the info panel.
+     */
+    private void layoutVisibleUnitButtons() {
+        final Container parent = this.unitButtons.get(0).getParent();
+        if (parent == null) return;
+        final int gap = lib.scaleInt(5);
+        final List<UnitButton> shown = new ArrayList<>();
+        int width = -gap, height = 0;
+        for (UnitButton ub : this.unitButtons) {
+            if (!ub.isVisible()) continue;
+            shown.add(ub);
+            width += gap + ub.getWidth();
+            height = Math.max(height, ub.getHeight());
+        }
+        final int left = this.miniMapPanel.getWidth();
+        final int right = this.infoPanel.getX();
+        if (shown.isEmpty() || width > right - left) return;
+        int x = left + (right - left - width) / 2;
+        final int y = parent.getHeight() - height - gap;
+        for (UnitButton ub : shown) {
+            ub.setLocation(x, y);
+            x += gap + ub.getWidth();
+        }
     }
 
     private boolean isShowingOrIconified(JComponent panel) {

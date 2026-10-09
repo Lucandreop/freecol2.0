@@ -148,6 +148,10 @@ public final class GuidePanel extends JPanel {
     public void refresh() {
         final Player player = freeColClient.getMyPlayer();
         if (player == null || !isWanted()) return;
+        // One thing at a time: wait while a panel is open
+        final boolean blocked = freeColClient.getGUI().isPanelShowing();
+        if (isVisible() == blocked) setVisible(!blocked);
+        if (blocked) return;
         // A game already under way needs no welcome
         if (step == Step.WELCOME && player.getSettlementCount() > 0) {
             next(player);
@@ -162,6 +166,35 @@ public final class GuidePanel extends JPanel {
         if (step == shown) return;
         shown = step;
         layoutStep();
+        // The agenda may come or go with the step
+        freeColClient.getGUI().updateMapControls();
+    }
+
+    /**
+     * Should the agenda stay hidden for now?  While the first steps
+     * are taught, it would only say the same again.
+     *
+     * @return True if the agenda should be hidden.
+     */
+    public boolean hidesAgenda() {
+        return isWanted() && step != null
+            && step.ordinal() < Step.TURN.ordinal();
+    }
+
+    /**
+     * Place the card at the top of the map, in the middle, but clear
+     * of the agenda.
+     */
+    public void place() {
+        final Container parent = getParent();
+        if (parent == null) return;
+        int x = (parent.getWidth() - getWidth()) / 2;
+        for (java.awt.Component c : parent.getComponents()) {
+            if (c instanceof AgendaPanel && c.isVisible()) {
+                x = Math.max(x, c.getX() + c.getWidth() + lib.scaleInt(12));
+            }
+        }
+        setLocation(x, lib.scaleInt(8));
     }
 
     /**
@@ -244,8 +277,10 @@ public final class GuidePanel extends JPanel {
     private void layoutStep() {
         removeAll();
         final Font small = FontLibrary.getScaledFont("simple-bold-tiny");
-        final Font bold = FontLibrary.getScaledFont("simple-bold-small");
-        final Font plain = FontLibrary.getScaledFont("simple-plain-small");
+        final Font bold = FontLibrary.getScaledFont("simple-bold-smaller");
+        final Font plain = FontLibrary.getScaledFont("simple-plain-smaller");
+        final Font link = FontLibrary.getScaledFont("simple-plain-tiny");
+        final Font boldLink = FontLibrary.getScaledFont("simple-bold-tiny");
 
         final JLabel progress = new JLabel(Messages.message(StringTemplate
                 .template("guide.progress")
@@ -268,29 +303,29 @@ public final class GuidePanel extends JPanel {
         text.setFocusable(false);
         text.setLineWrap(true);
         text.setWrapStyleWord(true);
-        add(text, "width " + lib.scaleInt(380) + "!");
+        add(text, "width " + lib.scaleInt(320) + "!");
 
         final JPanel buttons = new JPanel(new MigLayout("ins 0, gap "
                 + lib.scaleInt(12), "[left]push[right]"));
         buttons.setOpaque(false);
         if (step == Step.WELCOME) {
-            buttons.add(link(Messages.message("guide.start"), bold,
+            buttons.add(link(Messages.message("guide.start"), boldLink,
                 new Color(30, 90, 30), () -> {
                     next(freeColClient.getMyPlayer());
                     refresh();
                 }));
         } else if (step == Step.OBJECTIVES) {
-            buttons.add(link(Messages.message("guide.finish"), bold,
+            buttons.add(link(Messages.message("guide.finish"), boldLink,
                 new Color(30, 90, 30), this::finish));
         } else {
-            buttons.add(link(Messages.message("guide.skipStep"), plain,
+            buttons.add(link(Messages.message("guide.skipStep"), link,
                 new Color(110, 80, 50), () -> {
                     next(freeColClient.getMyPlayer());
                     refresh();
                 }));
         }
         if (step != Step.OBJECTIVES) {
-            final JLabel skip = link(Messages.message("guide.skip"), plain,
+            final JLabel skip = link(Messages.message("guide.skip"), link,
                 new Color(110, 80, 50), this::finish);
             skip.setToolTipText(Messages.message("guide.skip.tip"));
             buttons.add(skip);
@@ -298,10 +333,7 @@ public final class GuidePanel extends JPanel {
         add(buttons, "growx, gaptop " + lib.scaleInt(4));
 
         setSize(getPreferredSize());
-        final Container parent = getParent();
-        if (parent != null) {
-            setLocation((parent.getWidth() - getWidth()) / 2, getY());
-        }
+        place();
         revalidate();
         repaint();
     }
