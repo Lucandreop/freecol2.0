@@ -684,6 +684,7 @@ public final class EuropePanel extends PortPanel {
     public EuropePanel(FreeColClient freeColClient, boolean header) {
         super(freeColClient, new MigLayout("wrap 3, fill",
                                            "[30%:][30%:][15%:]"));
+        GuidePanel.mark("europe");
 
         exitButton = new EuropeButton(Messages.message("close"),
             KeyEvent.VK_ESCAPE, EuropeAction.EXIT.toString(),

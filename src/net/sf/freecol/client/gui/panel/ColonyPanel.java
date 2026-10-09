@@ -298,6 +298,7 @@ public final class ColonyPanel extends PortPanel
      */
     public ColonyPanel(FreeColClient freeColClient, Colony colony) {
         super(freeColClient, new MigLayout());
+        GuidePanel.mark("colony");
 
         getMigLayout().setLayoutConstraints("fill, wrap 2, insets 0, gap 0 0");
         getMigLayout().setColumnConstraints("[fill][474!]");

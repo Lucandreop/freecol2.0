@@ -83,6 +83,9 @@ public final class CornerMapControls extends MapControls {
     /** The agenda of what is coming up in the next few turns. */
     private final AgendaPanel agendaPanel;
 
+    /** The guide through the first steps, for new players. */
+    private final GuidePanel guidePanel;
+
     /** A skin for the mini map. */
     private Image miniMapSkin;
 
@@ -124,6 +127,7 @@ public final class CornerMapControls extends MapControls {
             });
     
         this.agendaPanel = new AgendaPanel(freeColClient);
+        this.guidePanel = new GuidePanel(freeColClient);
         this.miniMapPanel = new MiniMapFreeColPanel(freeColClient);
         this.miniMapPanelSkin = new MiniMapPanelSkin();
         
@@ -247,6 +251,12 @@ public final class CornerMapControls extends MapControls {
                 this.agendaPanel.setLocation(lib.scaleInt(8), lib.scaleInt(8));
                 ret.add(this.agendaPanel);
             }
+            if (this.guidePanel.isWanted() && !this.guidePanel.isShowing()) {
+                this.guidePanel.refresh();
+                this.guidePanel.setLocation(
+                    (cw - this.guidePanel.getWidth()) / 2, lib.scaleInt(8));
+                ret.add(this.guidePanel);
+            }
 
             ret.addAll(this.unitButtons.stream().filter(b -> !b.isShowing()).collect(Collectors.toList()));
     
@@ -323,6 +333,7 @@ public final class CornerMapControls extends MapControls {
             .getBoolean(ClientOptions.DISPLAY_COMPASS_ROSE);
         if (rose && this.compassRose.isShowing()) ret.add(this.compassRose);
         if (this.agendaPanel.isShowing()) ret.add(this.agendaPanel);
+        if (this.guidePanel.isShowing()) ret.add(this.guidePanel);
         for (UnitButton ub : this.unitButtons) {
             if (ub.isShowing()) ret.add(ub);
         }
@@ -354,6 +365,7 @@ public final class CornerMapControls extends MapControls {
                 this.agendaPanel.setSize(0, 0);
             }
         }
+        if (this.guidePanel.isShowing()) this.guidePanel.refresh();
     }
 
     private boolean isShowingOrIconified(JComponent panel) {

@@ -220,7 +220,10 @@
         <!-- Show the agenda of the next few turns on the map. -->
         <booleanOption id="model.option.guiShowAgenda"
                        defaultValue="true"/>
-        <booleanOption id="model.option.guiShowUnitAdded"
+        <!-- Guide a new player through the first steps of a game. -->
+        <booleanOption id="model.option.guiShowGuide"
+                       defaultValue="true"/>
+<booleanOption id="model.option.guiShowUnitAdded"
                        defaultValue="true"/>
         <booleanOption id="model.option.guiShowUnitArrived"
                        defaultValue="true"/>
