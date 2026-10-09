@@ -1470,6 +1470,137 @@ public final class InGameController extends FreeColClientHolder {
     }
 
     /**
+     * Give a ship a trade route between a colony and Europe: it takes
+     * what the colony makes to spare to sell in Europe, and brings
+     * back the colonists waiting on the docks.
+     *
+     * Called from ColonyPanel.
+     *
+     * @param colony The {@code Colony} to trade from.
+     * @param ship The naval {@code Unit} to sail the route.
+     * @return True if the ship is now on the route.
+     */
+    public boolean europeRoute(Colony colony, Unit ship) {
+        final Player player = getMyPlayer();
+        final Europe europe = player.getEurope();
+        if (colony == null || ship == null || europe == null
+            || !ship.isNaval() || !player.owns(ship)
+            || !player.canMoveToEurope() || !requireOurTurn()) return false;
+
+        // One route for each colony, made again each time
+        final String name = Messages.message(StringTemplate
+            .template("europeRoute.name").addName("%colony%", colony.getName()));
+        TradeRoute route = find(player.getTradeRoutes(),
+                                r -> name.equals(r.getName()));
+        if (route == null) {
+            route = newTradeRoute(player);
+            if (route == null) return false;
+            route.setName(name);
+        }
+        route.clearStops();
+        final List<GoodsType> exports = getExports(colony);
+        final TradeRouteStop home = new TradeRouteStop(getGame(), colony);
+        final int loads = Math.max(1, ship.getCargoCapacity()
+            / Math.max(1, exports.size()));
+        for (GoodsType type : exports) {
+            for (int i = 0; i < loads; i++) home.addCargo(type);
+        }
+        route.addStop(home);
+        route.addStop(new TradeRouteStop(getGame(), europe));
+        if (!updateTradeRoute(route) || !assignTradeRoute(ship, route)) {
+            return false;
+        }
+
+        final StringTemplate goods = StringTemplate.label(", ");
+        for (GoodsType type : exports) goods.addNamed(type);
+        showInformationPanel(ship, StringTemplate
+            .template((exports.isEmpty()) ? "europeRoute.colonistsOnly"
+                : "europeRoute.assigned")
+            .addStringTemplate("%unit%", ship.getLabel(Unit.UnitLabelType.NATIONAL))
+            .addName("%colony%", colony.getName())
+            .addStringTemplate("%goods%", goods));
+        return true;
+    }
+
+    /**
+     * What a colony makes to spare that Europe buys: goods made faster
+     * than the colony uses them, leaving out food, horses, arms, and
+     * what is needed for building.
+     *
+     * Package-visible for the test suite.
+     *
+     * @param colony The {@code Colony} to check.
+     * @return The goods types to sell.
+     */
+    static List<GoodsType> getExports(Colony colony) {
+        final Player player = colony.getOwner();
+        final List<GoodsType> ret = new ArrayList<>();
+        for (GoodsType type : colony.getSpecification()
+                 .getStorableGoodsTypeList()) {
+            if (type.isFoodType() || type.isBreedable() || type.getMilitary()
+                || type.isBuildingMaterial() || type.isRawBuildingMaterial()
+                || !player.canTrade(type)) continue;
+            if (colony.getNetProductionOf(type) > 0) ret.add(type);
+        }
+        return ret;
+    }
+
+    /**
+     * Does a trade route call at Europe?
+     *
+     * @param route The {@code TradeRoute} to check.
+     * @return True if one of its stops is Europe.
+     */
+    private static boolean isEuropeRoute(TradeRoute route) {
+        return route != null
+            && any(route.getStopList(), s -> s.getLocation() instanceof Europe);
+    }
+
+    /**
+     * Is there a colonist to take on or put off at a stop?
+     *
+     * @param unit The carrier {@code Unit}.
+     * @param stop The {@code TradeRouteStop} to check.
+     * @return True if there is a colonist to carry.
+     */
+    private static boolean hasFerryWork(Unit unit, TradeRouteStop stop) {
+        final Location loc = stop.getLocation();
+        if (loc instanceof Europe) {
+            return unit.getSpaceLeft() > 0
+                && any(((Europe)loc).getUnitList(), u -> !u.isNaval());
+        }
+        return unit.getUnitCount() > 0;
+    }
+
+    /**
+     * On a route through Europe, take on the colonists waiting on the
+     * docks, and put them off at the colony.
+     *
+     * @param unit The carrier {@code Unit}.
+     * @param stop The {@code TradeRouteStop} it is at.
+     * @param lb A {@code LogBuilder} to note what was done.
+     */
+    private void ferryColonists(Unit unit, TradeRouteStop stop,
+                                LogBuilder lb) {
+        int n = 0;
+        if (stop.getLocation() instanceof Europe) {
+            for (Unit u : new ArrayList<>(((Europe)stop.getLocation())
+                                              .getUnitList())) {
+                if (u.isNaval() || unit.getSpaceLeft() <= 0) continue;
+                if (boardShip(u, unit)) n++;
+            }
+            if (n > 0) lb.add(" ", Messages.message(StringTemplate
+                    .template("europeRoute.boarded").addAmount("%number%", n)));
+        } else {
+            for (Unit u : new ArrayList<>(unit.getUnitList())) {
+                if (leaveShip(u)) n++;
+            }
+            if (n > 0) lb.add(" ", Messages.message(StringTemplate
+                    .template("europeRoute.landed").addAmount("%number%", n)));
+        }
+    }
+
+    /**
      * Send a ship to Europe, the quickest way to the high seas.
      *
      * Called from SailToEuropeAction.
@@ -2638,6 +2769,7 @@ public final class InGameController extends FreeColClientHolder {
             lb.mark();
             unloadUnitAtStop(unit, lb); // Anything to unload?
             loadUnitAtStop(unit, lb); // Anything to load?
+            if (isEuropeRoute(tr)) ferryColonists(unit, stop, lb);
             lb.grew("\n", Messages.message(stop.getLabelFor("tradeRoute.atStop",
                                                             player)));
 
@@ -2652,7 +2784,8 @@ public final class InGameController extends FreeColClientHolder {
             if (unit.atStop(moreStops.get(0))) moreStops.remove(0);
             for (TradeRouteStop trs : moreStops) {
                 if (trs.hasWork(unit, (!checkProduction) ? 0
-                                : unit.getTurnsToReach(trs.getLocation()))) {
+                                : unit.getTurnsToReach(trs.getLocation()))
+                    || (isEuropeRoute(tr) && hasFerryWork(unit, trs))) {
                     next = trs;
                     break;
                 }

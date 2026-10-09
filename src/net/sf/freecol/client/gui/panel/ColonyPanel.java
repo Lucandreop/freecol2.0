@@ -169,6 +169,10 @@ public final class ColonyPanel extends PortPanel
     private JButton focusButton = new FreeColButton(Messages.message("colonyPanel.focus"))
             .withButtonStyle(ButtonStyle.SIMPLE);
 
+    /** Gives the ship in port a trade route with Europe. */
+    private JButton europeRouteButton = new FreeColButton(Messages.message("colonyPanel.europeRoute"))
+            .withButtonStyle(ButtonStyle.SIMPLE);
+
     private JButton colonyUnitsButton = new FreeColButton(Messages.message("colonyPanel.colonyUnits"))
             .withButtonStyle(ButtonStyle.SIMPLE);
 
@@ -247,6 +251,12 @@ public final class ColonyPanel extends PortPanel
     };
 
     private final ActionListener focusCmd = ae -> showFocusMenu();
+
+    private final ActionListener europeRouteCmd = ae -> {
+        final Unit ship = (selectedUnitLabel == null) ? null
+            : selectedUnitLabel.getUnit();
+        if (igc().europeRoute(getColony(), ship)) updateInPortPanel();
+    };
 
     private final ActionListener warehouseCmd = ae -> {
         getGUI().showWarehouseDialog(getColony(), updated -> {
@@ -1154,6 +1164,8 @@ public final class ColonyPanel extends PortPanel
         fillButton.addActionListener(fillCmd);
         warehouseButton.addActionListener(warehouseCmd);
         focusButton.addActionListener(focusCmd);
+        europeRouteButton.addActionListener(europeRouteCmd);
+        europeRouteButton.setToolTipText(Messages.message("colonyPanel.europeRoute.tip"));
         focusButton.setToolTipText(Messages.message("colonyPanel.focus.tip"));
         buildQueueButton.addActionListener(buildQueueCmd);
         colonyUnitsButton.addActionListener(colonyUnitsCmd);
@@ -1236,6 +1248,7 @@ public final class ColonyPanel extends PortPanel
         
         add(wrapWithBorder(warehouseButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
         add(wrapWithBorder(focusButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
+        add(wrapWithBorder(europeRouteButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
         
         if (setGoodsButton != null) {
             add(wrapWithBorder(setGoodsButton), "height 48:, growy, gap 0 0 0 0, sgy bottomRow");
@@ -1292,6 +1305,7 @@ public final class ColonyPanel extends PortPanel
         fillButton.removeActionListener(fillCmd);
         warehouseButton.removeActionListener(warehouseCmd);
         focusButton.removeActionListener(focusCmd);
+        europeRouteButton.removeActionListener(europeRouteCmd);
         buildQueueButton.removeActionListener(buildQueueCmd);
         colonyUnitsButton.removeActionListener(colonyUnitsCmd);
         if (setGoodsButton != null) {
@@ -1426,6 +1440,14 @@ public final class ColonyPanel extends PortPanel
         final Colony colony = getColony();
         unloadButton.setEnabled(false);
         fillButton.setEnabled(false);
+        // A route to Europe needs a ship that can sail there
+        final Unit selected = (selectedUnitLabel == null) ? null
+            : selectedUnitLabel.getUnit();
+        if (europeRouteButton != null) {
+            europeRouteButton.setEnabled(isEditable() && selected != null
+                && selected.isNaval() && selected.getType().canMoveToHighSeas()
+                && selected.getOwner().canMoveToEurope());
+        }
         if (selectedUnitLabel != null && isEditable()) {
             Unit unit = selectedUnitLabel.getUnit();
             if (unit != null && unit.isCarrier() && unit.hasCargo()) {
@@ -1901,6 +1923,7 @@ public final class ColonyPanel extends PortPanel
         fillButton = null;
         warehouseButton = null;
         focusButton = null;
+        europeRouteButton = null;
         buildQueueButton = null;
         colonyUnitsButton = null;
         setGoodsButton = null;
